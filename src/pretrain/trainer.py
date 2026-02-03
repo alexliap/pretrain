@@ -284,7 +284,6 @@ def training_step(
         # Gradient clipping and norm calculation
         grad_norm = 0.0
         if accelerator.sync_gradients:
-            accelerator.clip_grad_value_(model.parameters(), config.max_grad_norm)
             grad_norm = accelerator.clip_grad_norm_(
                 model.parameters(), config.max_grad_norm
             )
