@@ -141,18 +141,28 @@ def load_model_and_tokenizer(
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_path)
     vocab_size = len(tokenizer)
 
-    # Create model config
-    model_config = AutoConfig.from_pretrained(config.base_model)
-    model_config.hidden_size = config.hidden_size
-    model_config.intermediate_size = config.intermediate_size
-    model_config.vocab_size = vocab_size
+    if config.saved_checkpoint_path is None:
+        # Create model config
+        model_config = AutoConfig.from_pretrained(config.base_model)
+        model_config.hidden_size = config.hidden_size
+        model_config.intermediate_size = config.intermediate_size
+        model_config.vocab_size = vocab_size
 
-    # Create model with Flash Attention 2
-    model = AutoModelForCausalLM.from_config(
-        model_config,
-        dtype=torch.bfloat16,
-        attn_implementation="sdpa",
-    )
+        # Create model with Flash Attention 2
+        model = AutoModelForCausalLM.from_config(
+            model_config,
+            dtype=torch.bfloat16,
+            attn_implementation="sdpa",
+        )
+    else:
+        print(f"Loading model from checkpoint: {config.saved_checkpoint_path} ...")
+        model = AutoModelForCausalLM.from_pretrained(
+            config.saved_checkpoint_path,
+            local_files_only=True,
+            torch_dtype=torch.bfloat16,
+        )
+        model_config = model.config
+
     # model = torch.compile(model)  # Disabled due to stride mismatch issue
 
     return model, model_config, tokenizer

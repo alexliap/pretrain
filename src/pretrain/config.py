@@ -33,13 +33,17 @@ class EvaluationConfig:
 
 @dataclass
 class TrainingConfig:
-    """Configuration for training run."""
+    """Configuration for training run.
+    When saved_checkpoint_path is given model configuration parameters are overriden and not used at all.
+    If saved_checkpoint_path is None, then model config has to be set up."""
 
     # Model config
     tokenizer_path: str
-    base_model: str = "Qwen/Qwen3-0.6B"
+    base_model: str | None = None
     hidden_size: int = 128
     intermediate_size: int = 1024
+
+    saved_checkpoint_path: str | None = None
 
     # Training config
     learning_rate: float = 1e-4
@@ -78,6 +82,12 @@ class TrainingConfig:
 
     # Evaluation config
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+
+    def __post_init__(self):
+        if self.base_model is None and self.saved_checkpoint_path is None:
+            raise ValueError(
+                "At least one of 'base_model' or 'saved_checkpoint_path' must be provided"
+            )
 
     @property
     def warmup_start_factor(self):
