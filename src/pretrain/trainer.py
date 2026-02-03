@@ -1,6 +1,9 @@
 """Training functions for pretraining."""
 
-from typing import Tuple
+import heapq
+import os
+import shutil
+from pathlib import Path
 
 import torch
 import trackio
@@ -16,6 +19,96 @@ from transformers import (
 )
 
 from pretrain.config import TrainingConfig
+from pretrain.evaluation import EvaluationRunner
+
+
+class CheckpointManager:
+    """Manages top-k checkpoints based on validation loss."""
+
+    def __init__(self, save_dir: str, top_k: int):
+        """Initialize checkpoint manager.
+
+        Args:
+            save_dir: Directory to save checkpoints
+            top_k: Number of best checkpoints to keep
+        """
+        self.save_dir = Path(save_dir)
+        self.save_dir.mkdir(parents=True, exist_ok=True)
+        self.top_k = top_k
+        # Max heap (negated losses): (-val_loss, step, path)
+        # Worst checkpoint (largest real loss) is at index 0
+        self.checkpoints: list[tuple[float, int, str]] = []
+
+    def should_save(self, val_loss: float) -> bool:
+        """Check if checkpoint should be saved based on validation loss.
+
+        Args:
+            val_loss: Current validation loss
+
+        Returns:
+            True if checkpoint should be saved
+        """
+        if len(self.checkpoints) < self.top_k:
+            return True
+        # If current loss is better (smaller) than worst kept checkpoint
+        # self.checkpoints[0][0] is -worst_loss, so worst_loss = -self.checkpoints[0][0]
+        worst_loss = -self.checkpoints[0][0]
+        return val_loss < worst_loss
+
+    def save_checkpoint(
+        self,
+        model: PreTrainedModel,
+        val_loss: float,
+        step: int,
+        config: TrainingConfig,
+        accelerator: Accelerator,
+    ) -> None:
+        """Save checkpoint and manage top-k.
+
+        Args:
+            model: Model to save
+            val_loss: Validation loss for this checkpoint
+            step: Current training step
+            config: Training configuration
+            accelerator: Accelerator instance
+        """
+        checkpoint_name = f"checkpoint-step{step}-loss{val_loss:.4f}"
+        checkpoint_path = self.save_dir / checkpoint_name
+
+        # Save model using accelerator (handles distributed saving)
+        unwrapped_model = accelerator.unwrap_model(model)
+        if accelerator.is_main_process:
+            unwrapped_model.save_pretrained(
+                checkpoint_path,
+                safe_serialization=True,
+                max_shard_size=config.max_shard_size,
+            )
+            accelerator.print(f"Saved checkpoint: {checkpoint_path}")
+
+        # Update checkpoint tracking (negate loss for max-heap behavior)
+        heapq.heappush(self.checkpoints, (-val_loss, step, str(checkpoint_path)))
+
+        # Remove worst checkpoint if exceeding top_k
+        if len(self.checkpoints) > self.top_k:
+            neg_worst_loss, _, worst_path = heapq.heappop(self.checkpoints)
+            worst_loss = -neg_worst_loss
+            if accelerator.is_main_process and os.path.exists(worst_path):
+                shutil.rmtree(worst_path)
+                accelerator.print(
+                    f"Removed checkpoint: {worst_path} (loss: {worst_loss:.4f})"
+                )
+
+    def get_best_checkpoint(self) -> str | None:
+        """Get path to best checkpoint.
+
+        Returns:
+            Path to checkpoint with lowest validation loss, or None if no checkpoints
+        """
+        if not self.checkpoints:
+            return None
+        # Find checkpoint with most negative value (smallest actual loss)
+        best = min(self.checkpoints, key=lambda x: x[0])
+        return best[2]
 
 
 def setup_accelerator(config: TrainingConfig) -> Accelerator:
@@ -34,16 +127,15 @@ def setup_accelerator(config: TrainingConfig) -> Accelerator:
 
 
 def load_model_and_tokenizer(
-    config: TrainingConfig, accelerator: Accelerator
-) -> Tuple[PreTrainedModel, AutoTokenizer, AutoConfig]:
+    config: TrainingConfig,
+) -> tuple[PreTrainedModel, AutoConfig, AutoTokenizer]:
     """Load model, tokenizer, and config.
 
     Args:
         config: Training configuration
-        accelerator: Accelerator instance for distributed training
 
     Returns:
-        Tuple of (model, tokenizer, model_config)
+        Tuple of (model, model_config, tokenizer)
     """
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_path)
@@ -55,16 +147,18 @@ def load_model_and_tokenizer(
     model_config.intermediate_size = config.intermediate_size
     model_config.vocab_size = vocab_size
 
-    # Create model
-    model = AutoModelForCausalLM.from_config(model_config, dtype=torch.bfloat16)
-    model = torch.compile(model)
+    # Create model with Flash Attention 2
+    model = AutoModelForCausalLM.from_config(
+        model_config,
+        dtype=torch.bfloat16,
+        attn_implementation="sdpa",
+    )
+    # model = torch.compile(model)  # Disabled due to stride mismatch issue
 
-    accelerator.print(f"Loaded tokenizer from {config.tokenizer_path}")
-
-    return model, tokenizer, model_config
+    return model, model_config, tokenizer
 
 
-def setup_dataloaders(config: TrainingConfig) -> Tuple[DataLoader, DataLoader]:
+def setup_dataloaders(config: TrainingConfig) -> tuple[DataLoader, DataLoader]:
     """Create train and validation dataloaders.
 
     Args:
@@ -88,7 +182,7 @@ def setup_dataloaders(config: TrainingConfig) -> Tuple[DataLoader, DataLoader]:
 
 def setup_optimizer_and_scheduler(
     model: PreTrainedModel, config: TrainingConfig
-) -> Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler]:
+) -> tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LRScheduler]:
     """Create optimizer and learning rate scheduler.
 
     Args:
@@ -99,7 +193,11 @@ def setup_optimizer_and_scheduler(
         Tuple of (optimizer, scheduler)
     """
     optimizer = torch.optim.AdamW(
-        model.parameters(), lr=config.learning_rate, eps=1e-10
+        model.parameters(),
+        lr=config.learning_rate,
+        eps=config.eps,
+        betas=config.betas,
+        weight_decay=config.weight_decay,
     )
 
     scheduler = LinearLR(
@@ -162,7 +260,7 @@ def training_step(
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     accelerator: Accelerator,
     config: TrainingConfig,
-) -> Tuple[float, float]:
+) -> tuple[float, float, float]:
     """Execute single training step.
 
     Args:
@@ -174,7 +272,7 @@ def training_step(
         config: Training configuration
 
     Returns:
-        Tuple of (loss, current_lr)
+        Tuple of (loss, current_lr, grad_norm)
     """
     with accelerator.accumulate(model):
         # Forward pass
@@ -183,9 +281,13 @@ def training_step(
         # Backward pass
         accelerator.backward(loss)
 
-        # Gradient clipping
+        # Gradient clipping and norm calculation
+        grad_norm = 0.0
         if accelerator.sync_gradients:
-            accelerator.clip_grad_norm_(model.parameters(), config.max_grad_norm)
+            accelerator.clip_grad_value_(model.parameters(), config.max_grad_norm)
+            grad_norm = accelerator.clip_grad_norm_(
+                model.parameters(), config.max_grad_norm
+            )
 
         optimizer.step()
         optimizer.zero_grad()
@@ -193,7 +295,7 @@ def training_step(
 
         current_lr = scheduler.get_last_lr()[0]
 
-        return loss.item(), current_lr
+        return loss.item(), current_lr, grad_norm.item()
 
 
 def validate(
@@ -243,11 +345,14 @@ def train_epoch(
     scheduler: torch.optim.lr_scheduler.LRScheduler,
     accelerator: Accelerator,
     config: TrainingConfig,
+    checkpoint_manager: CheckpointManager,
+    evaluation_runner: EvaluationRunner | None = None,
 ) -> None:
-    """Train for one epoch with periodic validation.
+    """Train for one epoch with periodic validation and evaluation.
 
     Args:
         epoch: Current epoch number
+        total_steps: Total number of training steps
         model: Model to train
         train_dataloader: Training data loader
         val_dataloader: Validation data loader
@@ -255,10 +360,9 @@ def train_epoch(
         scheduler: Learning rate scheduler
         accelerator: Accelerator for distributed training
         config: Training configuration
+        checkpoint_manager: Manager for checkpoint saving
+        evaluation_runner: Optional evaluation runner for benchmarks
     """
-    # Initialize logging
-    trackio.init(project=config.project_name, auto_log_gpu=config.auto_log_gpu)
-
     model.train()
     total_tokens_passed = 0
     val_loss = 0.0
@@ -272,7 +376,7 @@ def train_epoch(
 
     for step, batch in progress_bar:
         # Training step
-        loss, current_lr = training_step(
+        loss, current_lr, grad_norm = training_step(
             model, batch, optimizer, scheduler, accelerator, config
         )
         total_tokens_passed += int(
@@ -284,8 +388,9 @@ def train_epoch(
                 {
                     "train_loss": round(loss, 4),
                     "learning_rate": current_lr,
+                    "grad_norm": round(grad_norm, 4),
                     "tokens_passed": total_tokens_passed,
-                    "iteration": step
+                    "iteration": step,
                 }
             )
 
@@ -294,6 +399,7 @@ def train_epoch(
             {
                 "loss": f"{loss:.4f}",
                 "lr": f"{current_lr:.2e}",
+                "grad_norm": f"{grad_norm:.2e}",
                 "val_loss": f"{val_loss:.4f}",
             }
         )
@@ -302,6 +408,29 @@ def train_epoch(
         if (step + 1) % config.val_check_interval == 0:
             val_loss = validate(model, val_dataloader, accelerator)
             trackio.log({"val_loss": round(val_loss, 4)})
+
+            # Save checkpoint if it's in top-k
+            if checkpoint_manager.should_save(val_loss):
+                checkpoint_manager.save_checkpoint(
+                    model, val_loss, step + 1, config, accelerator
+                )
+
+            # Run evaluations at same interval as validation
+            if evaluation_runner is not None:
+                evaluation_runner.run_all(model, step)
+
+        # Save checkpoint every N steps (regardless of validation)
+        if (step + 1) % config.save_every_n_steps == 0:
+            # If we just validated, skip saving again
+            if (step + 1) % config.val_check_interval != 0:
+                # Use last validation loss or inf if no validation yet
+                save_loss = val_loss if val_loss > 0.0 else float("inf")
+                checkpoint_manager.save_checkpoint(
+                    model, save_loss, step + 1, config, accelerator
+                )
+
+        if step == total_steps:
+            break
 
 
 def train(config: TrainingConfig) -> None:
@@ -312,7 +441,7 @@ def train(config: TrainingConfig) -> None:
     """
     # Setup
     accelerator = setup_accelerator(config)
-    model, tokenizer, model_config = load_model_and_tokenizer(config, accelerator)
+    model, model_config, tokenizer = load_model_and_tokenizer(config)
     print_model_info(model, model_config, accelerator)
 
     train_dataloader, val_dataloader = setup_dataloaders(config)
@@ -322,6 +451,18 @@ def train(config: TrainingConfig) -> None:
     model, optimizer, scheduler, train_dataloader, val_dataloader = accelerator.prepare(
         model, optimizer, scheduler, train_dataloader, val_dataloader
     )
+
+    # Initialize checkpoint manager
+    checkpoint_manager = CheckpointManager(config.save_dir, config.save_top_k)
+
+    # Initialize evaluation runner
+    evaluation_runner = None
+    if config.evaluation.enabled:
+        evaluation_runner = EvaluationRunner(
+            config.evaluation,
+            tokenizer,
+            accelerator,
+        )
 
     # Training loop
     for epoch in range(config.num_epochs):
@@ -335,6 +476,13 @@ def train(config: TrainingConfig) -> None:
             scheduler,
             accelerator,
             config,
+            checkpoint_manager,
+            evaluation_runner,
         )
+
+    # Print best checkpoint
+    best_checkpoint = checkpoint_manager.get_best_checkpoint()
+    if best_checkpoint:
+        accelerator.print(f"Best checkpoint: {best_checkpoint}")
 
     accelerator.print("Training complete!")

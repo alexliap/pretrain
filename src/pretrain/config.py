@@ -1,6 +1,34 @@
 """Configuration for training."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict, field
+from datetime import datetime
+
+
+@dataclass
+class EvaluationTaskConfig:
+    """Configuration for a single evaluation task."""
+
+    enabled: bool = False
+    num_samples: int | None = None  # None = use all samples
+    batch_size: int = 1
+    temperature: float = 0.0  # Greedy decoding
+    max_new_tokens: int = 512
+
+
+@dataclass
+class EvaluationConfig:
+    """Configuration for evaluation tasks."""
+
+    enabled: bool = False  # Master switch
+
+    # Task configs
+    humaneval: EvaluationTaskConfig = field(default_factory=EvaluationTaskConfig)
+    ifeval: EvaluationTaskConfig = field(default_factory=EvaluationTaskConfig)
+    mmlu: EvaluationTaskConfig = field(default_factory=EvaluationTaskConfig)
+
+    # Logging
+    log_predictions: bool = False
+    save_results_dir: str = "eval_results"
 
 
 @dataclass
@@ -21,13 +49,17 @@ class TrainingConfig:
     num_workers: int = 0
     max_grad_norm: float = 1.0
 
+    # Optimizer config
+    eps: float = 1e-10
+    betas: tuple[float, float] = (0.9, 0.95)
+    weight_decay: float = 0.1
+
     # Scheduler config
     warmup_steps: int = 200
-    warmup_start_factor: float = 0.005  # lr / 200
 
     # Validation config
     val_check_interval: int = 500
-    val_size: int = 5000
+    val_size: int = 10000
 
     # Accelerate config
     gradient_accumulation_steps: int = 1
@@ -37,3 +69,28 @@ class TrainingConfig:
     project_name: str = "test-project"
     auto_log_gpu: bool = True
     log_every_n: int = 5
+
+    # Checkpoint saving config
+    save_dir: str = "checkpoints"
+    save_top_k: int = 3
+    save_every_n_steps: int = 1000
+    max_shard_size: str = "5GB"
+
+    # Evaluation config
+    evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+
+    @property
+    def warmup_start_factor(self):
+        return self.learning_rate / self.warmup_steps
+
+    @property
+    def run_name(self):
+        run_name = ""
+        run_name += str(datetime.now().date())
+        run_name += (
+            "-" + str(str(datetime.now().hour)) + "-" + str(str(datetime.now().minute))
+        )
+        return run_name
+    
+    def get_dict(self):
+        return asdict(self)

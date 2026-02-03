@@ -254,3 +254,4 @@ test.py
 *.jsonl
 *_cache/
 tokenized_data/
+checkpoints/
