@@ -69,6 +69,10 @@ class TrainingConfig:
     gradient_accumulation_steps: int = 1
     mixed_precision: str = "bf16"
 
+    # Data config
+    max_seq_length: int = 2048  # Context window size for packing
+    use_packed_data: bool = True  # Whether to use packed dataset
+
     # Logging config
     project_name: str = "test-project"
     auto_log_gpu: bool = True

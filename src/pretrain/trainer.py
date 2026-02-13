@@ -86,11 +86,17 @@ def setup_dataloaders(config: TrainingConfig) -> tuple[DataLoader, DataLoader]:
     from pretrain.model import MyData
 
     train_dataloader = MyData(
-        num_workers=config.num_workers, batch_size=config.batch_size
+        num_workers=config.num_workers,
+        batch_size=config.batch_size,
+        max_seq_length=config.max_seq_length,
+        use_packed_data=config.use_packed_data,
     ).train_dataloader()
 
     val_dataloader = MyData(
-        num_workers=config.num_workers, batch_size=config.batch_size
+        num_workers=config.num_workers,
+        batch_size=config.batch_size,
+        max_seq_length=config.max_seq_length,
+        use_packed_data=config.use_packed_data,
     ).val_dataloader(size=config.val_size)
 
     return train_dataloader, val_dataloader

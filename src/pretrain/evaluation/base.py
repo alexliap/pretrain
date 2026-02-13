@@ -80,7 +80,7 @@ class EvaluationTask(ABC):
 
         try:
             self.accelerator.print(f"\n{'='*50}")
-            self.accelerator.print(f"Running {self.name} evaluation...")
+            self.accelerator.print(f"Running {self.name} evaluation ...")
             self.accelerator.print(f"{'='*50}")
 
             model.eval()
