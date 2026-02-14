@@ -32,13 +32,9 @@ class EvaluationConfig:
 
 
 @dataclass
-class TrainingConfig:
-    """Configuration for training run.
-    When saved_checkpoint_path is given model configuration parameters are overriden and not used at all.
-    If saved_checkpoint_path is None, then model config has to be set up."""
+class ModelConfig:
+    """Configuration for model architecture."""
 
-    # Model config
-    tokenizer_path: str
     base_model: str | None = None
     hidden_size: int = 128
     intermediate_size: int = 1024
@@ -46,6 +42,16 @@ class TrainingConfig:
     num_hidden_layers: int = 28
     num_heads: int = 8
 
+
+@dataclass
+class TrainingConfig:
+    """Configuration for training run.
+    When saved_checkpoint_path is given model configuration parameters are overriden and not used at all.
+    If saved_checkpoint_path is None, then model config has to be set up."""
+
+    # Model config
+    model: ModelConfig = field(default_factory=ModelConfig)
+    tokenizer_path: str = ""
     saved_checkpoint_path: str | None = None
 
     # Training config
@@ -58,7 +64,7 @@ class TrainingConfig:
 
     # Optimizer config
     eps: float = 1e-10
-    betas: tuple[float, float] = (0.9, 0.95)
+    betas: list[float] = field(default_factory=lambda: [0.9, 0.95])
     weight_decay: float = 0.1
 
     # Scheduler config
@@ -91,9 +97,9 @@ class TrainingConfig:
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
 
     def __post_init__(self):
-        if self.base_model is None and self.saved_checkpoint_path is None:
+        if self.model.base_model is None and self.saved_checkpoint_path is None:
             raise ValueError(
-                "At least one of 'base_model' or 'saved_checkpoint_path' must be provided"
+                "At least one of 'model.base_model' or 'saved_checkpoint_path' must be provided"
             )
 
     @property
@@ -108,6 +114,23 @@ class TrainingConfig:
             "-" + str(str(datetime.now().hour)) + "-" + str(str(datetime.now().minute))
         )
         return run_name
-    
+
     def get_dict(self):
         return asdict(self)
+
+    @staticmethod
+    def from_dict(d: dict) -> "TrainingConfig":
+        """Create TrainingConfig from a nested dictionary (e.g., from Hydra)."""
+        model_dict = d.pop("model", {})
+        model_cfg = ModelConfig(**model_dict)
+
+        eval_dict = d.pop("evaluation", {})
+        if eval_dict:
+            for task_name in ["humaneval", "ifeval", "mmlu"]:
+                if task_name in eval_dict and isinstance(eval_dict[task_name], dict):
+                    eval_dict[task_name] = EvaluationTaskConfig(**eval_dict[task_name])
+            eval_cfg = EvaluationConfig(**eval_dict)
+        else:
+            eval_cfg = EvaluationConfig()
+
+        return TrainingConfig(model=model_cfg, evaluation=eval_cfg, **d)

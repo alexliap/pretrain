@@ -49,12 +49,12 @@ def load_model_and_tokenizer(
 
     if config.saved_checkpoint_path is None:
         # Create model config
-        model_config = AutoConfig.from_pretrained(config.base_model)
-        model_config.hidden_size = config.hidden_size
-        model_config.intermediate_size = config.intermediate_size
-        model_config.head_dim = config.head_dim
-        model_config.num_hidden_layers = config.num_hidden_layers
-        model_config.num_heads = config.num_heads
+        model_config = AutoConfig.from_pretrained(config.model.base_model)
+        model_config.hidden_size = config.model.hidden_size
+        model_config.intermediate_size = config.model.intermediate_size
+        model_config.head_dim = config.model.head_dim
+        model_config.num_hidden_layers = config.model.num_hidden_layers
+        model_config.num_heads = config.model.num_heads
         model_config.vocab_size = vocab_size
 
         # Create model with Flash Attention 2
