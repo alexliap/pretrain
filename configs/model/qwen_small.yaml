@@ -1,3 +1,4 @@
+name: "qwen_small"
 base_model: "Qwen/Qwen3-0.6B"
 hidden_size: 768
 intermediate_size: 1024

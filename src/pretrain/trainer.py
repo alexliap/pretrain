@@ -1,5 +1,7 @@
 """Training functions for pretraining."""
 
+import os
+
 import torch
 import trackio
 from accelerate import Accelerator
@@ -378,8 +380,9 @@ def train(config: TrainingConfig) -> None:
         model, optimizer, scheduler, train_dataloader, val_dataloader
     )
 
-    # Initialize checkpoint manager
-    checkpoint_manager = CheckpointManager(config.save_dir, config.save_top_k)
+    # Initialize checkpoint manager with model-specific and datetime-based subdirectory
+    save_dir = os.path.join(config.save_dir, config.model.name, config.run_name)
+    checkpoint_manager = CheckpointManager(save_dir, config.save_top_k)
 
     # Initialize evaluation runner
     evaluation_runner = None

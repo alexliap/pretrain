@@ -35,6 +35,7 @@ class EvaluationConfig:
 class ModelConfig:
     """Configuration for model architecture."""
 
+    name: str = ""
     base_model: str | None = None
     hidden_size: int = 128
     intermediate_size: int = 1024
