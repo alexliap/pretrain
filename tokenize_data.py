@@ -20,10 +20,10 @@ def tokenize_fn(examples):
 
 
 if __name__ == "__main__":
-    tokenizer = AutoTokenizer.from_pretrained("el_en_tokenizer/tokenizers/tokenizer_64_0.1")
+    tokenizer = AutoTokenizer.from_pretrained("tokenizer/")
     EOS_TOKEN = tokenizer.eos_token
 
-    dataset = load_dataset("data/", cache_dir="data_cache/")
+    dataset = load_dataset("parquet", data_files="tinystories.parquet")
     dataset = dataset.map(
         formatting_prompts_func, batched=True, num_proc=8, desc="Appending EOS token"
     )
