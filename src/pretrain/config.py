@@ -42,6 +42,9 @@ class TrainingConfig:
     base_model: str | None = None
     hidden_size: int = 128
     intermediate_size: int = 1024
+    head_dim: int = 128
+    num_hidden_layers: int = 28
+    num_heads: int = 8
 
     saved_checkpoint_path: str | None = None
 

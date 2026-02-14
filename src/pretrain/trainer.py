@@ -52,6 +52,9 @@ def load_model_and_tokenizer(
         model_config = AutoConfig.from_pretrained(config.base_model)
         model_config.hidden_size = config.hidden_size
         model_config.intermediate_size = config.intermediate_size
+        model_config.head_dim = config.head_dim
+        model_config.num_hidden_layers = config.num_hidden_layers
+        model_config.num_heads = config.num_heads
         model_config.vocab_size = vocab_size
 
         # Create model with Flash Attention 2

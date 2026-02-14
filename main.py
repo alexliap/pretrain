@@ -15,15 +15,20 @@ def main():
         tokenizer_path="tokenizer/",
         base_model="Qwen/Qwen3-0.6B",
         # saved_checkpoint_path="./checkpoints/checkpoint-step300-loss9.6758",
-        hidden_size=128,
+        
+        hidden_size=768,
         intermediate_size=1024,
+        head_dim = 64,
+        num_hidden_layers = 4,
+        num_heads = 4,
+        
         learning_rate=1e-4,
-        batch_size=64,
+        batch_size=16,
         num_epochs=1,
         num_workers=0,
         max_grad_norm=1.0,
         warmup_steps=500,
-        val_check_interval=500,
+        val_check_interval=1000,
         val_size=15_000,
         gradient_accumulation_steps=1,
         mixed_precision="bf16",
@@ -33,7 +38,7 @@ def main():
         auto_log_gpu=True,
         save_dir="checkpoints",
         save_top_k=3,
-        save_every_n_steps=100,
+        save_every_n_steps=500,
         max_shard_size="5GB",
         # Evaluation configuration (disabled by default)
         # Enable evaluations and implement tasks in src/pretrain/evaluation/ to use
