@@ -1,5 +1,6 @@
 """Training functions for pretraining."""
 
+import gc
 import os
 
 import torch
@@ -335,6 +336,7 @@ def train_epoch(
 
         # Periodic validation
         if (step + 1) % config.val_check_interval == 0:
+            gc.collect()
             val_loss = validate(model, val_dataloader, accelerator)
             trackio.log({"val_loss": round(val_loss, 4)})
 
@@ -399,6 +401,10 @@ def train(config: TrainingConfig) -> None:
             tokenizer,
             accelerator,
         )
+
+    # Disable automatic GC to prevent periodic GPU stalls from cyclic collection.
+    # Manual gc.collect() calls happen during validation instead.
+    gc.disable()
 
     # Training loop
     for epoch in range(config.num_epochs):
