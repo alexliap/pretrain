@@ -38,7 +38,9 @@ class MyData:
             batch_size=self.batch_size,
             shuffle=True,
             num_workers=self.num_workers,
-            pin_memory=False,
+            persistent_workers=True,
+            prefetch_factor=2,
+            pin_memory=True,
             collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
         )
 
@@ -64,6 +66,8 @@ class MyData:
             batch_size=self.batch_size,
             shuffle=False,
             num_workers=self.num_workers,
-            pin_memory=False,
+            prefetch_factor=2,
+            persistent_workers=True,
+            pin_memory=True,
             collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
         )
