@@ -39,7 +39,7 @@ class MyData:
             shuffle=True,
             num_workers=self.num_workers,
             pin_memory=False,
-            # collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
+            collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
         )
 
     def val_dataloader(self, size: int = int(5e2)):
@@ -65,5 +65,5 @@ class MyData:
             shuffle=False,
             num_workers=self.num_workers,
             pin_memory=False,
-            # collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
+            collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
         )
