@@ -20,7 +20,7 @@ def main():
         learning_rate=5e-5,
         batch_size=4,
         num_epochs=1,
-        total_steps=1_000,
+        # total_steps=1_000,
         num_workers=0,
         max_grad_norm=1.0,
         warmup_steps=200,

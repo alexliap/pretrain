@@ -288,9 +288,11 @@ def train_epoch(
     total_tokens_passed = 0
     val_loss = 0.0
 
+    effective_steps = total_steps if total_steps is not None else len(train_dataloader)
+
     progress_bar = tqdm(
         enumerate(train_dataloader),
-        total=total_steps,
+        total=effective_steps,
         disable=not accelerator.is_local_main_process,
         desc=f"Epoch {epoch + 1}/{config.num_epochs}",
     )
@@ -350,7 +352,7 @@ def train_epoch(
                     model, save_loss, step + 1, config, accelerator
                 )
 
-        if step == total_steps:
+        if total_steps is not None and step >= total_steps:
             break
 
 

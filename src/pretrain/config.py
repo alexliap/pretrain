@@ -49,7 +49,7 @@ class TrainingConfig:
     learning_rate: float = 1e-4
     batch_size: int = 16
     num_epochs: int = 1
-    total_steps: int = 10000
+    total_steps: int | None = None
     num_workers: int = 0
     max_grad_norm: float = 1.0
 
