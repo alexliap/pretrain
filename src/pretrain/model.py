@@ -36,7 +36,7 @@ class MyData:
         return DataLoader(
             train,
             batch_size=self.batch_size,
-            shuffle=True,
+            shuffle=False,
             num_workers=self.num_workers,
             persistent_workers=True,
             prefetch_factor=2,
