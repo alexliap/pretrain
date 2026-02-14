@@ -3,6 +3,7 @@
 import os
 
 import torch
+import yaml
 import trackio
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import LinearLR
@@ -383,6 +384,12 @@ def train(config: TrainingConfig) -> None:
     # Initialize checkpoint manager with model-specific and datetime-based subdirectory
     save_dir = os.path.join(config.save_dir, config.model.name, config.run_name)
     checkpoint_manager = CheckpointManager(save_dir, config.save_top_k)
+
+    # Save training config alongside checkpoints
+    if accelerator.is_main_process:
+        config_path = os.path.join(save_dir, "config.yaml")
+        with open(config_path, "w") as f:
+            yaml.dump(config.get_dict(), f, default_flow_style=False)
 
     # Initialize evaluation runner
     evaluation_runner = None
