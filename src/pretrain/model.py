@@ -10,7 +10,7 @@ def collate_fn(batch, max_seq_length: int):
     return {"input_ids": padded_input_ids}
 
 
-class MyData:
+class PretrainDataLoader:
     def __init__(self, batch_size=2, num_workers=4, max_seq_length=2048, use_packed_data=True):
         self.batch_size = batch_size
         self.num_workers = num_workers

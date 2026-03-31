@@ -90,16 +90,16 @@ def setup_dataloaders(config: TrainingConfig) -> tuple[DataLoader, DataLoader]:
     Returns:
         Tuple of (train_dataloader, val_dataloader)
     """
-    from pretrain.model import MyData
+    from pretrain.model import PretrainDataLoader
 
-    train_dataloader = MyData(
+    train_dataloader = PretrainDataLoader(
         num_workers=config.num_workers,
         batch_size=config.batch_size,
         max_seq_length=config.max_seq_length,
         use_packed_data=config.use_packed_data,
     ).train_dataloader()
 
-    val_dataloader = MyData(
+    val_dataloader = PretrainDataLoader(
         num_workers=config.num_workers,
         batch_size=config.batch_size,
         max_seq_length=config.max_seq_length,
