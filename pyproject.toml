@@ -5,6 +5,9 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/pretrain"]
 
+[project.scripts]
+pretrain-data = "pretrain.cli:main"
+
 [project]
 name = "pretrain"
 version = "0.1.0"
@@ -20,5 +23,5 @@ dependencies = [
     "omegaconf>=2.3.0",
     "polars>=1.37.1",
     "trackio[gpu]>=0.15.0",
-    "transformers>=4.57.3",
+    "transformers>5.0.0",
 ]

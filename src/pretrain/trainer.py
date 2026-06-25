@@ -61,7 +61,6 @@ def load_model_and_tokenizer(
         model_config.num_heads = config.model.num_heads
         model_config.vocab_size = vocab_size
 
-        # Create model with Flash Attention 2
         model = AutoModelForCausalLM.from_config(
             model_config,
             dtype=torch.bfloat16,

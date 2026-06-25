@@ -23,7 +23,7 @@ def main(cfg: DictConfig) -> None:
         auto_log_gpu=config.auto_log_gpu,
         name=config.run_name,
         config=config.get_dict(),
-        space_id="alexliap/tinystories"
+        space_id=None,
     )
 
     train(config)

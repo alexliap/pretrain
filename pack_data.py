@@ -103,12 +103,10 @@ def compute_stats_dict(stats: PackingStats, max_seq_length: int) -> dict:
 
 
 def pack_split(
-    dataset, split_name: str, max_seq_length: int, eos_token_id: int
+    dataset, max_seq_length: int, eos_token_id: int
 ) -> tuple[Dataset, dict]:
     """Pack a single split (train or test) of the dataset using dataset methods."""
     print(f"\n{'=' * 60}")
-    print(f"Packing {split_name} split")
-    print(f"{'=' * 60}")
     print(f"Original examples: {len(dataset):,}")
 
     # Track statistics during packing
@@ -125,7 +123,7 @@ def pack_split(
     stats = compute_stats_dict(packing_stats, max_seq_length)
 
     # Print statistics
-    print(f"\nPacking Statistics for {split_name}:")
+    print("\nPacking Statistics")
     print(f"  Original examples: {len(dataset):,}")
     print(f"  Packed sequences: {stats['total_sequences']:,}")
     print(f"  Total tokens: {stats['total_tokens']:,}")
@@ -182,19 +180,14 @@ def main():
     # Load tokenized dataset
     print(f"\nLoading tokenized dataset from {args.input_dir} ...")
     dataset = load_from_disk(args.input_dir)
-    print(f"Dataset loaded with splits: {list(dataset.keys())}")
 
     # Pack each split
     packed_dataset = {}
     all_stats = {}
 
-    for split_name in dataset.keys():
-        split_data = dataset[split_name]
-        packed_split, stats = pack_split(
-            split_data, split_name, args.max_seq_length, args.eos_token_id
-        )
-        packed_dataset[split_name] = packed_split
-        all_stats[split_name] = stats
+    packed_dataset, stats = pack_split(
+        dataset, args.max_seq_length, args.eos_token_id
+    )
 
     # Save packed dataset
     print(f"\n{'=' * 60}")
