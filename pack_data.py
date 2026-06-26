@@ -181,24 +181,22 @@ def main():
     print(f"\nLoading tokenized dataset from {args.input_dir} ...")
     dataset = load_from_disk(args.input_dir)
 
-    # Pack each split
-    packed_dataset = {}
-    all_stats = {}
-
+    # Pack the (single-split) dataset
     packed_dataset, stats = pack_split(
         dataset, args.max_seq_length, args.eos_token_id
     )
+    all_stats = {"train": stats}
 
     # Save packed dataset
     print(f"\n{'=' * 60}")
-    print("Saving packed dataset...")
+    print("Saving packed dataset ...")
     print(f"{'=' * 60}")
 
     output_path = Path(args.output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Save as DatasetDict
-    packed_dataset_dict = DatasetDict(packed_dataset)
+    packed_dataset_dict = DatasetDict({"train": packed_dataset})
     packed_dataset_dict.save_to_disk(args.output_dir, num_proc=16)
     print(f"Packed dataset saved to: {args.output_dir}")
 
