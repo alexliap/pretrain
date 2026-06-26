@@ -1,1 +1,1 @@
-CUDA_VISIBLE_DEVICES="4" uv run main.py
+CUDA_VISIBLE_DEVICES="4,5" uv run accelerate launch main.py
