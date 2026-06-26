@@ -91,6 +91,11 @@ class TrainingConfig:
 
     # Checkpoint saving config
     save_dir: str = "checkpoints"
+    # Name of the checkpoint subdirectory. Defaults to model.name when None,
+    # which is only meaningful when building a model from the model config
+    # group. Set this explicitly (e.g. when resuming from saved_checkpoint_path)
+    # so the run dir isn't tied to an unused model config name.
+    experiment_name: str | None = None
     save_top_k: int = 3
     save_every_n_steps: int = 1000
     save_last: bool = True

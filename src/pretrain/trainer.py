@@ -425,7 +425,8 @@ def train(config: TrainingConfig) -> None:
     )
 
     # Initialize checkpoint manager with model-specific and datetime-based subdirectory
-    save_dir = os.path.join(config.save_dir, config.model.name, config.run_name)
+    experiment_name = config.experiment_name or config.model.name
+    save_dir = os.path.join(config.save_dir, experiment_name, config.run_name)
     checkpoint_manager = CheckpointManager(save_dir, config.save_top_k)
 
     # Save training config alongside checkpoints

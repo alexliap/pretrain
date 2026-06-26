@@ -17,7 +17,7 @@ learning_rate: 1e-4
 batch_size: 8
 num_epochs: 1
 total_steps: 100
-total_tokens: 500000
+total_tokens: 1_000_000_000
 num_workers: 4
 max_grad_norm: 1.0
 
@@ -50,6 +50,10 @@ log_every_n: 10
 
 # Checkpoint saving
 save_dir: "checkpoints"
+# Subdir name under save_dir. Falls back to model.name when null. Set this when
+# resuming from saved_checkpoint_path so the run dir isn't named after an unused
+# model config (e.g. qwen_small).
+experiment_name: "lfm2_5_base"
 save_top_k: 1
 save_every_n_steps: 500
 save_last: true
