@@ -60,6 +60,7 @@ class TrainingConfig:
     batch_size: int = 16
     num_epochs: int = 1
     total_steps: int | None = None
+    total_tokens: int | None = None
     num_workers: int = 0
     max_grad_norm: float = 1.0
 

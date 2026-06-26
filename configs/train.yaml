@@ -9,15 +9,16 @@ hydra:
   run:
     dir: .
 
-tokenizer_path: "tokenizer/"
-# saved_checkpoint_path: null
+tokenizer_path: "./models/lfm2_5_base/"
+saved_checkpoint_path: "./models/lfm2_5_base/"
 
 # Training
 learning_rate: 1e-4
-batch_size: 16
+batch_size: 8
 num_epochs: 1
-total_steps: null
-num_workers: 0
+total_steps: 100
+total_tokens: 1000000
+num_workers: 4
 max_grad_norm: 1.0
 
 # Optimizer
@@ -25,13 +26,13 @@ eps: 1e-10
 betas:
   - 0.9
   - 0.95
-weight_decay: 0.1
+weight_decay: 0.001
 
 # Scheduler
-warmup_steps: 500
+warmup_steps: 10
 
 # Validation
-val_check_interval: 1000
+val_check_interval: 50
 val_size: 15000
 
 # Accelerate
@@ -39,17 +40,17 @@ gradient_accumulation_steps: 1
 mixed_precision: "bf16"
 
 # Data
-max_seq_length: 512
+max_seq_length: 2048
 use_packed_data: true
 
 # Logging
-project_name: "scaling-laws"
+project_name: "test_run_lfm25"
 auto_log_gpu: true
-log_every_n: 5
+log_every_n: 10
 
 # Checkpoint saving
 save_dir: "checkpoints"
-save_top_k: 3
+save_top_k: 1
 save_every_n_steps: 500
 max_shard_size: "5GB"
 

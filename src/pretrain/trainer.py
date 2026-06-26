@@ -4,8 +4,8 @@ import gc
 import os
 
 import torch
-import yaml
 import trackio
+import yaml
 from accelerate import Accelerator
 from torch.optim.lr_scheduler import LinearLR
 from torch.utils.data import DataLoader
@@ -16,6 +16,7 @@ from transformers import (
     AutoTokenizer,
     PreTrainedModel,
 )
+
 from pretrain.checkpoint import CheckpointManager
 from pretrain.config import TrainingConfig
 from pretrain.evaluation import EvaluationRunner
@@ -175,9 +176,16 @@ def compute_loss(model: PreTrainedModel, batch: dict) -> torch.Tensor:
     Returns:
         Loss tensor
     """
-    x = batch["input_ids"][:, :-1]
-    y = batch["input_ids"][:, 1:]
-    outputs = model(x, labels=y)
+    input_ids = batch["input_ids"]
+    attention_mask = batch.get("attention_mask")
+
+    # Let the model do the causal shift internally. Mask padding positions in
+    # the labels so loss is not computed on padding (validation batches).
+    labels = input_ids.clone()
+    if attention_mask is not None:
+        labels[attention_mask == 0] = -100
+
+    outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
     return outputs.loss if hasattr(outputs, "loss") else outputs
 
 
@@ -264,7 +272,6 @@ def validate(
 
 def train_epoch(
     epoch: int,
-    total_steps: int,
     model: PreTrainedModel,
     train_dataloader: DataLoader,
     val_dataloader: DataLoader,
@@ -274,12 +281,12 @@ def train_epoch(
     config: TrainingConfig,
     checkpoint_manager: CheckpointManager,
     evaluation_runner: EvaluationRunner | None = None,
-) -> None:
+    tokens_so_far: int = 0,
+) -> int:
     """Train for one epoch with periodic validation and evaluation.
 
     Args:
         epoch: Current epoch number
-        total_steps: Total number of training steps
         model: Model to train
         train_dataloader: Training data loader
         val_dataloader: Validation data loader
@@ -289,28 +296,54 @@ def train_epoch(
         config: Training configuration
         checkpoint_manager: Manager for checkpoint saving
         evaluation_runner: Optional evaluation runner for benchmarks
+        tokens_so_far: Cumulative tokens seen in previous epochs (for the
+            total_tokens budget that spans across epochs)
+
+    Returns:
+        Cumulative number of tokens seen after this epoch.
     """
     model.train()
-    total_tokens_passed = 0
+    cumulative_tokens = tokens_so_far
     val_loss = 0.0
 
-    effective_steps = total_steps if total_steps is not None else len(train_dataloader)
-
-    progress_bar = tqdm(
-        enumerate(train_dataloader),
-        total=effective_steps,
-        disable=not accelerator.is_local_main_process,
-        desc=f"Epoch {epoch + 1}/{config.num_epochs}",
-    )
+    # Stopping-criterion hierarchy: total_tokens -> total_steps -> num_epochs.
+    # The progress bar is driven by whichever criterion is active.
+    if config.total_tokens is not None:
+        progress_bar = tqdm(
+            enumerate(train_dataloader),
+            total=config.total_tokens,
+            initial=tokens_so_far,
+            unit="tok",
+            unit_scale=True,
+            disable=not accelerator.is_local_main_process,
+            desc=f"Epoch {epoch + 1}/{config.num_epochs}",
+        )
+    else:
+        effective_steps = (
+            config.total_steps
+            if config.total_steps is not None
+            else len(train_dataloader)
+        )
+        progress_bar = tqdm(
+            enumerate(train_dataloader),
+            total=effective_steps,
+            disable=not accelerator.is_local_main_process,
+            desc=f"Epoch {epoch + 1}/{config.num_epochs}",
+        )
 
     for step, batch in progress_bar:
         # Training step
         loss, current_lr, grad_norm = training_step(
             model, batch, optimizer, scheduler, accelerator, config
         )
-        total_tokens_passed += int(
-            torch.prod(torch.tensor(batch["input_ids"].size())).item()
-        )
+        # Count the actual tokens in this batch (handles uneven batch sizes).
+        batch_tokens = int(batch["input_ids"].numel())
+        cumulative_tokens += batch_tokens
+
+        # Advance the progress bar by tokens (token mode) or by step (otherwise).
+        if config.total_tokens is not None:
+            progress_bar.update(batch_tokens)
+
         # Log metrics
         if step % config.log_every_n == 0:
             trackio.log(
@@ -318,7 +351,7 @@ def train_epoch(
                     "train_loss": round(loss, 4),
                     "learning_rate": current_lr,
                     "grad_norm": round(grad_norm, 4),
-                    "tokens_passed": total_tokens_passed,
+                    "tokens_passed": cumulative_tokens,
                     "iteration": step,
                 }
             )
@@ -359,8 +392,15 @@ def train_epoch(
                     model, save_loss, step + 1, config, accelerator
                 )
 
-        if total_steps is not None and step >= total_steps:
+        # Stopping criteria (in priority order).
+        if config.total_tokens is not None:
+            if cumulative_tokens >= config.total_tokens:
+                break
+        elif config.total_steps is not None and (step + 1) >= config.total_steps:
             break
+
+    progress_bar.close()
+    return cumulative_tokens
 
 
 def train(config: TrainingConfig) -> None:
@@ -401,15 +441,11 @@ def train(config: TrainingConfig) -> None:
             accelerator,
         )
 
-    # Disable automatic GC to prevent periodic GPU stalls from cyclic collection.
-    # Manual gc.collect() calls happen during validation instead.
-    gc.disable()
-
     # Training loop
+    tokens_seen = 0
     for epoch in range(config.num_epochs):
-        train_epoch(
+        tokens_seen = train_epoch(
             epoch,
-            config.total_steps,
             model,
             train_dataloader,
             val_dataloader,
@@ -419,7 +455,12 @@ def train(config: TrainingConfig) -> None:
             config,
             checkpoint_manager,
             evaluation_runner,
+            tokens_so_far=tokens_seen,
         )
+
+        # Stop early once the token budget is exhausted (spans epochs).
+        if config.total_tokens is not None and tokens_seen >= config.total_tokens:
+            break
 
     # Print best checkpoint
     best_checkpoint = checkpoint_manager.get_best_checkpoint()
