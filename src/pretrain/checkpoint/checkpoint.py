@@ -85,6 +85,38 @@ class CheckpointManager:
                     f"Removed checkpoint: {worst_path} (loss: {worst_loss:.4f})"
                 )
 
+    def save_last_checkpoint(
+        self,
+        model: PreTrainedModel,
+        step: int,
+        config: TrainingConfig,
+        accelerator: Accelerator,
+    ) -> None:
+        """Save the final ("last") model regardless of top-k ranking.
+
+        Always written to a fixed ``last`` directory (overwriting any previous
+        one) so it can be reliably picked up for resuming/further training. This
+        checkpoint is not tracked in the top-k heap and is never pruned.
+
+        Args:
+            model: Model to save
+            step: Current training step
+            config: Training configuration
+            accelerator: Accelerator instance
+        """
+        checkpoint_path = self.save_dir / "last"
+
+        unwrapped_model = accelerator.unwrap_model(model)
+        if accelerator.is_main_process:
+            if os.path.exists(checkpoint_path):
+                shutil.rmtree(checkpoint_path)
+            unwrapped_model.save_pretrained(
+                checkpoint_path,
+                safe_serialization=True,
+                max_shard_size=config.max_shard_size,
+            )
+            accelerator.print(f"Saved last checkpoint: {checkpoint_path} (step {step})")
+
     def get_best_checkpoint(self) -> str | None:
         """Get path to best checkpoint.
 

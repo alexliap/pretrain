@@ -300,7 +300,8 @@ def train_epoch(
             total_tokens budget that spans across epochs)
 
     Returns:
-        Cumulative number of tokens seen after this epoch.
+        Tuple of (cumulative tokens seen after this epoch, number of steps run
+        in this epoch).
     """
     model.train()
     cumulative_tokens = tokens_so_far
@@ -331,6 +332,7 @@ def train_epoch(
             desc=f"Epoch {epoch + 1}/{config.num_epochs}",
         )
 
+    step = -1
     for step, batch in progress_bar:
         # Training step
         loss, current_lr, grad_norm = training_step(
@@ -400,7 +402,7 @@ def train_epoch(
             break
 
     progress_bar.close()
-    return cumulative_tokens
+    return cumulative_tokens, step + 1
 
 
 def train(config: TrainingConfig) -> None:
@@ -443,8 +445,9 @@ def train(config: TrainingConfig) -> None:
 
     # Training loop
     tokens_seen = 0
+    global_step = 0
     for epoch in range(config.num_epochs):
-        tokens_seen = train_epoch(
+        tokens_seen, steps_in_epoch = train_epoch(
             epoch,
             model,
             train_dataloader,
@@ -457,10 +460,18 @@ def train(config: TrainingConfig) -> None:
             evaluation_runner,
             tokens_so_far=tokens_seen,
         )
+        global_step += steps_in_epoch
 
         # Stop early once the token budget is exhausted (spans epochs).
         if config.total_tokens is not None and tokens_seen >= config.total_tokens:
             break
+
+    # Always save the final model (regardless of top-k) for resuming/further
+    # training. Lives in a fixed `last/` dir alongside the top-k checkpoints.
+    if config.save_last:
+        checkpoint_manager.save_last_checkpoint(
+            model, global_step, config, accelerator
+        )
 
     # Print best checkpoint
     best_checkpoint = checkpoint_manager.get_best_checkpoint()

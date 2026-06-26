@@ -93,6 +93,7 @@ class TrainingConfig:
     save_dir: str = "checkpoints"
     save_top_k: int = 3
     save_every_n_steps: int = 1000
+    save_last: bool = True
     max_shard_size: str = "5GB"
 
     # Evaluation config
