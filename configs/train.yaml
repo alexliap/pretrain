@@ -14,10 +14,10 @@ saved_checkpoint_path: "./models/lfm2_5_base/"
 
 # Training
 learning_rate: 1e-4
-batch_size: 8
+batch_size: 14
 num_epochs: 1
 total_steps: 100
-total_tokens: 1_000_000_000
+total_tokens: 1_000_000
 num_workers: 4
 max_grad_norm: 1.0
 
@@ -29,11 +29,11 @@ betas:
 weight_decay: 0.001
 
 # Scheduler
-warmup_steps: 10
+warmup_steps: 1000
 
 # Validation
-val_check_interval: 50
-val_size: 15000
+val_check_interval: 1000
+val_size: 20000
 
 # Accelerate
 gradient_accumulation_steps: 1
@@ -43,8 +43,11 @@ mixed_precision: "bf16"
 max_seq_length: 2048
 use_packed_data: true
 
+# Model
+compile: "torch"
+
 # Logging
-project_name: "test_run_lfm25"
+project_name: "lfm2_5_base_cpt_gr"
 auto_log_gpu: true
 log_every_n: 10
 
@@ -55,7 +58,7 @@ save_dir: "checkpoints"
 # model config (e.g. qwen_small).
 experiment_name: "lfm2_5_base"
 save_top_k: 1
-save_every_n_steps: 500
+save_every_n_steps: 1000
 save_last: true
 max_shard_size: "5GB"
 

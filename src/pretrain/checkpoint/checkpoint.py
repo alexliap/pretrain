@@ -107,7 +107,9 @@ class CheckpointManager:
         # Save full training state (optimizer/scheduler/RNG/counters) into the
         # checkpoint so it is self-contained and resumable. Collective call:
         # every process must run it, so it stays outside the is_main_process
-        # guard above.
+        # guard above. Barrier first so the main process has finished writing the
+        # checkpoint dir before other ranks write state into it.
+        accelerator.wait_for_everyone()
         accelerator.save_state(str(checkpoint_path / "state"))
 
         # Update checkpoint tracking (negate loss for max-heap behavior)
@@ -157,7 +159,11 @@ class CheckpointManager:
                 self.tokenizer.save_pretrained(checkpoint_path)
             accelerator.print(f"Saved last checkpoint: {checkpoint_path} (step {step})")
 
-        # Self-contained resumable state (collective call, all processes).
+        # Self-contained resumable state (collective call, all processes). Barrier
+        # first: the main process rmtree's and recreates `last/` above, which would
+        # otherwise race with other ranks writing state into `last/state` and wipe
+        # the directory mid-write ("Parent directory .../last/state does not exist").
+        accelerator.wait_for_everyone()
         accelerator.save_state(str(checkpoint_path / "state"))
 
     def get_best_checkpoint(self) -> str | None:

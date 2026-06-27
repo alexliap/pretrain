@@ -89,6 +89,9 @@ class TrainingConfig:
     auto_log_gpu: bool = True
     log_every_n: int = 5
 
+    # model compile
+    compile: str = "torch"
+
     # Checkpoint saving config
     save_dir: str = "checkpoints"
     # Name of the checkpoint subdirectory. Defaults to model.name when None,

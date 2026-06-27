@@ -66,7 +66,7 @@ class PretrainTask:
             model = AutoModelForCausalLM.from_config(
                 model_config,
                 dtype=torch.bfloat16,
-                attn_implementation="sdpa",
+                attn_implementation="kernels-community/flash-attn2",
             )
         elif resuming:
             # Resuming: only the architecture is needed here; the actual weights are
@@ -81,7 +81,7 @@ class PretrainTask:
             model = AutoModelForCausalLM.from_config(
                 model_config,
                 dtype=torch.bfloat16,
-                attn_implementation="sdpa",
+                attn_implementation="kernels-community/flash-attn2",
             )
         else:
             print(f"Loading model from checkpoint: {config.saved_checkpoint_path} ...")
@@ -92,7 +92,9 @@ class PretrainTask:
             )
             model_config = model.config
 
-        # model = torch.compile(model)  # Disabled due to stride mismatch issue
+        if self.config.compile == "torch":
+            torch.set_float32_matmul_precision("high")
+            model = torch.compile(model)  # Disabled due to stride mismatch issue
 
         self.model = model
         self.model_config = model_config
