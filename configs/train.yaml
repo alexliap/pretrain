@@ -9,58 +9,62 @@ hydra:
   run:
     dir: .
 
-tokenizer_path: "./models/lfm2_5_base/"
+# Run-level (top-level) settings
 saved_checkpoint_path: "./models/lfm2_5_base/"
-
-# Training
-learning_rate: 1e-4
-batch_size: 14
+compile: "torch"
 num_epochs: 1
 total_steps: 100
 total_tokens: 1_000_000
-num_workers: 4
-max_grad_norm: 1.0
-
-# Optimizer
-eps: 1e-10
-betas:
-  - 0.9
-  - 0.95
-weight_decay: 0.001
-
-# Scheduler
-warmup_steps: 1000
-
-# Validation
-val_check_interval: 1000
-val_size: 20000
-
-# Accelerate
-gradient_accumulation_steps: 1
-mixed_precision: "bf16"
 
 # Data
-max_seq_length: 2048
-use_packed_data: true
+data:
+  tokenizer_path: "./models/lfm2_5_base/"
+  max_seq_length: 2048
+  use_packed_data: true
+  num_workers: 4
+  batch_size: 14
 
-# Model
-compile: "torch"
+# Optimizer
+optimizer:
+  learning_rate: 1e-4
+  eps: 1e-10
+  betas:
+    - 0.9
+    - 0.95
+  weight_decay: 0.001
+  max_grad_norm: 1.0
+
+# Scheduler
+scheduler:
+  warmup_steps: 1000
+
+# Accelerate
+accelerate:
+  gradient_accumulation_steps: 1
+  mixed_precision: "bf16"
+
+# Validation
+validation:
+  val_check_interval: 1000
+  val_size: 20000
 
 # Logging
-project_name: "lfm2_5_base_cpt_gr"
-auto_log_gpu: true
-log_every_n: 10
+logging:
+  project_name: "lfm2_5_base_cpt_gr"
+  auto_log_gpu: true
+  log_every_n: 10
 
 # Checkpoint saving
-save_dir: "checkpoints"
-# Subdir name under save_dir. Falls back to model.name when null. Set this when
-# resuming from saved_checkpoint_path so the run dir isn't named after an unused
-# model config (e.g. qwen_small).
-experiment_name: "lfm2_5_base"
-save_top_k: 1
-save_every_n_steps: 1000
-save_last: true
-max_shard_size: "5GB"
+checkpoint:
+  save_dir: "checkpoints"
+  # Subdir name under save_dir. Falls back to model.name when null. Set this when
+  # resuming from saved_checkpoint_path so the run dir isn't named after an unused
+  # model config (e.g. qwen_small).
+  experiment_name: "lfm2_5_base"
+  save_top_k: 1
+  save_every_n_steps: 1000
+  save_last: true
+  max_shard_size: "5GB"
 
 # Evaluation
 evaluation:

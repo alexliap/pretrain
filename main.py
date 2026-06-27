@@ -19,8 +19,8 @@ def main(cfg: DictConfig) -> None:
 
     # Initialize logging
     trackio.init(
-        project=config.project_name,
-        auto_log_gpu=config.auto_log_gpu,
+        project=config.logging.project_name,
+        auto_log_gpu=config.logging.auto_log_gpu,
         name=config.run_name,
         config=config.get_dict(),
         space_id=None,

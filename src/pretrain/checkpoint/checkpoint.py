@@ -98,7 +98,7 @@ class CheckpointManager:
             unwrapped_model.save_pretrained(
                 checkpoint_path,
                 safe_serialization=True,
-                max_shard_size=config.max_shard_size,
+                max_shard_size=config.checkpoint.max_shard_size,
             )
             if self.tokenizer is not None:
                 self.tokenizer.save_pretrained(checkpoint_path)
@@ -153,7 +153,7 @@ class CheckpointManager:
             unwrapped_model.save_pretrained(
                 checkpoint_path,
                 safe_serialization=True,
-                max_shard_size=config.max_shard_size,
+                max_shard_size=config.checkpoint.max_shard_size,
             )
             if self.tokenizer is not None:
                 self.tokenizer.save_pretrained(checkpoint_path)

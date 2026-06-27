@@ -42,95 +42,126 @@ pretrain/
 │       ├── qwen_large.yaml
 │       └── qwen_xlarge.yaml
 ├── src/pretrain/
-│   ├── config.py              # Training configuration dataclass
-│   ├── trainer.py             # Training loops and utilities
-│   ├── model.py               # Data loading and model definitions
-│   ├── checkpoint/            # Checkpoint management (top-K saving)
+│   ├── config.py              # Training configuration dataclasses (nested sections)
+│   ├── task.py                # PretrainTask: end-to-end training workflow + orchestrator
+│   ├── dataloader.py          # Dataset loading and packed/padded collation
+│   ├── cli.py                 # `pretrain-data` CLI (download, tokenize)
+│   ├── data/                  # Data download & tokenization helpers
+│   ├── checkpoint/            # Checkpoint management (top-K + last)
 │   └── evaluation/            # Benchmark evaluation (HumanEval, IFEVAL, MMLU)
-├── main.py                    # Entry point for training
-├── get_data.py                # Data download script
-├── tokenize_data.py           # Tokenization script
+├── main.py                    # Entry point for training (Hydra)
+├── get_data.py                # Download raw parquet data from the Hub
+├── concat_data.py             # Concatenate raw files into a single parquet
 ├── pack_data.py               # Dataset packing script
-├── launch.sh                  # Accelerate launch helper
+├── dashboard.py               # Launch the trackio dashboard (write access)
+├── launch.sh / train.sh       # Accelerate launch helpers
 ├── data/                      # Raw data storage
-├── tokenized_data/            # Preprocessed tokenized datasets
-└── tokenizer/                 # Custom tokenizer files
+└── tokenized_data/            # Tokenized and packed datasets
 ```
 
 ## Configuration
 
 Training is configured via Hydra YAML files. The main config is `configs/train.yaml`, which composes a model preset via defaults:
 
+Settings are grouped into per-concern sections (`data`, `optimizer`, `scheduler`,
+`accelerate`, `validation`, `logging`, `checkpoint`, `evaluation`), with run-level
+fields kept at the top level:
+
 ```yaml
 defaults:
   - model: qwen_small  # or qwen_tiny, qwen_medium, qwen_large, qwen_xlarge
 
-tokenizer_path: "tokenizer/"
-
-# Training
-learning_rate: 1e-4
-batch_size: 16
+# Run-level (top-level)
 num_epochs: 1
-max_grad_norm: 1.0
-
-# Optimizer
-warmup_steps: 500
-
-# Validation
-val_check_interval: 1000
-val_size: 15000
+total_steps: null
+total_tokens: null
 
 # Data
-max_seq_length: 512
-use_packed_data: true
+data:
+  tokenizer_path: "tokenizer/"
+  max_seq_length: 512
+  use_packed_data: true
+  batch_size: 16
+
+# Optimizer (incl. gradient clipping)
+optimizer:
+  learning_rate: 1e-4
+  max_grad_norm: 1.0
+
+# Scheduler
+scheduler:
+  warmup_steps: 500
 
 # Accelerate
-mixed_precision: "bf16"
-gradient_accumulation_steps: 1
+accelerate:
+  mixed_precision: "bf16"
+  gradient_accumulation_steps: 1
+
+# Validation
+validation:
+  val_check_interval: 1000
+  val_size: 15000
 
 # Checkpointing
-save_top_k: 3
-save_every_n_steps: 500
+checkpoint:
+  save_top_k: 3
+  save_every_n_steps: 500
 
 # Logging
-project_name: "scaling-laws"
-auto_log_gpu: true
+logging:
+  project_name: "scaling-laws"
+  auto_log_gpu: true
 ```
 
-You can override any parameter from the command line:
+You can override any parameter from the command line using its section path:
 ```bash
-python main.py batch_size=32 learning_rate=3e-4 model=qwen_medium
+python main.py data.batch_size=32 optimizer.learning_rate=3e-4 model=qwen_medium
 ```
 
 ## Usage
 
-### 1. Prepare Data
+### 1. Download Data
 
-Download and prepare your training data:
+Download bilingual Greek-English text data from the HuggingFace Hub:
 
 ```bash
 python get_data.py
 ```
 
-This downloads bilingual Greek-English text data from HuggingFace Hub.
+Alternatively, fetch any Hub dataset with the CLI: `uv run pretrain-data download <repo_id> <local_dir>`.
 
-### 2. Tokenize Data
+### 2. Consolidate Data
 
-Tokenize your dataset:
-
-```bash
-python tokenize_data.py
-```
-
-### 3. Pack Data
-
-Pack tokenized sequences for efficient training (eliminates padding waste):
+Concatenate the downloaded files into a single parquet file (`data/concat_dataset/data.parquet`):
 
 ```bash
-python pack_data.py
+python concat_data.py
 ```
 
-### 4. Train
+### 3. Tokenize Data
+
+Tokenize the parquet dataset into train/test splits using the `pretrain-data` CLI:
+
+```bash
+uv run pretrain-data tokenize \
+  --tokenizer-repo-id <tokenizer-id-or-path> \
+  --data-path data/concat_dataset/data.parquet \
+  --output-path tokenized_data/
+```
+
+Use `--test-size` to change the held-out fraction (default `0.1`).
+
+### 4. Pack Data
+
+Pack tokenized sequences into fixed-length blocks for efficient training (eliminates padding waste):
+
+```bash
+python pack_data.py --max_seq_length 2048 \
+  --input_dir tokenized_data/train \
+  --output_dir tokenized_data/packed_train_data_2048
+```
+
+### 5. Train
 
 Run training with your configuration:
 
@@ -142,7 +173,7 @@ python main.py
 accelerate launch main.py
 
 # With config overrides
-python main.py model=qwen_large learning_rate=3e-4
+python main.py model=qwen_large optimizer.learning_rate=3e-4
 
 # Configure accelerate (first time)
 accelerate config
@@ -167,20 +198,23 @@ Training uses bfloat16 by default for faster computation and lower memory usage.
 
 ### Gradient Accumulation
 Simulate larger batch sizes without OOM errors:
-```python
-gradient_accumulation_steps=4  # Effective batch_size = 16 * 4 = 64
+```yaml
+accelerate:
+  gradient_accumulation_steps: 4  # Effective batch size = data.batch_size * 4
 ```
 
 ### Learning Rate Warmup
 Linear warmup scheduler for stable training start:
-```python
-warmup_steps=500
+```yaml
+scheduler:
+  warmup_steps: 500
 ```
 
 ### Periodic Validation
 Automatic validation runs during training:
-```python
-val_check_interval=1000  # Run validation every 1000 steps
+```yaml
+validation:
+  val_check_interval: 1000  # Run validation every 1000 steps
 ```
 
 ### Dataset Packing
@@ -221,12 +255,12 @@ Metrics logged:
 
 The project expects tokenized datasets in HuggingFace Datasets format with:
 - `input_ids`: Tokenized sequences
-- Train/test splits stored in `tokenized_data/train_data/`
-- Packed data support for configurable sequence lengths (via `max_seq_length`, default 512)
+- Train/test splits saved by `pretrain-data tokenize` under `tokenized_data/train` and `tokenized_data/test`
+- Packed data stored at `tokenized_data/packed_train_data_<max_seq_length>` (e.g. `..._2048`), selected automatically when `use_packed_data: true`
 
 ## Optimization Details
 
 - **Optimizer**: AdamW with beta=(0.9, 0.95), weight_decay=0.1, eps=1e-10
 - **Scheduler**: Linear warmup
 - **Gradient Clipping**: Max norm of 1.0
-- **Sequence Length**: Configurable via `max_seq_length` (default 512)
+- **Sequence Length**: Configurable via `data.max_seq_length` (default 2048)

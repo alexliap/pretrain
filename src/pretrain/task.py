@@ -33,8 +33,8 @@ class PretrainTask:
     def _init_accelerator(self) -> None:
         """Initialize the Accelerate accelerator from config."""
         self.accelerator = Accelerator(
-            gradient_accumulation_steps=self.config.gradient_accumulation_steps,
-            mixed_precision=self.config.mixed_precision,
+            gradient_accumulation_steps=self.config.accelerate.gradient_accumulation_steps,
+            mixed_precision=self.config.accelerate.mixed_precision,
         )
 
     def _init_model_and_tokenizer(self) -> None:
@@ -46,7 +46,7 @@ class PretrainTask:
         config = self.config
 
         # Load tokenizer
-        tokenizer = AutoTokenizer.from_pretrained(config.tokenizer_path)
+        tokenizer = AutoTokenizer.from_pretrained(config.data.tokenizer_path)
         vocab_size = len(tokenizer)
 
         resuming = config.saved_checkpoint_path is not None and os.path.isdir(
@@ -104,10 +104,10 @@ class PretrainTask:
         """Build the dataloader factory shared by train/validation loaders."""
         config = self.config
         self.dataloader = PretrainDataLoader(
-            num_workers=config.num_workers,
-            batch_size=config.batch_size,
-            max_seq_length=config.max_seq_length,
-            use_packed_data=config.use_packed_data,
+            num_workers=config.data.num_workers,
+            batch_size=config.data.batch_size,
+            max_seq_length=config.data.max_seq_length,
+            use_packed_data=config.data.use_packed_data,
         )
 
     def _init_train_dataloader(self) -> None:
@@ -116,7 +116,9 @@ class PretrainTask:
 
     def _init_validation_dataloader(self) -> None:
         """Create the validation dataloader (sets self.val_dataloader)."""
-        self.val_dataloader = self.dataloader.val_dataloader(size=self.config.val_size)
+        self.val_dataloader = self.dataloader.val_dataloader(
+            size=self.config.validation.val_size
+        )
 
     def _init_optimizer_and_scheduler(self) -> None:
         """Create the optimizer and LR scheduler (sets self.optimizer/self.scheduler)."""
@@ -124,16 +126,16 @@ class PretrainTask:
 
         self.optimizer = torch.optim.AdamW(
             self.model.parameters(),
-            lr=config.learning_rate,
-            eps=config.eps,
-            betas=config.betas,
-            weight_decay=config.weight_decay,
+            lr=config.optimizer.learning_rate,
+            eps=config.optimizer.eps,
+            betas=config.optimizer.betas,
+            weight_decay=config.optimizer.weight_decay,
         )
 
         self.scheduler = LinearLR(
             optimizer=self.optimizer,
             start_factor=config.warmup_start_factor,
-            total_iters=config.warmup_steps,
+            total_iters=config.scheduler.warmup_steps,
         )
 
     def _print_model_info(self) -> None:
@@ -203,7 +205,7 @@ class PretrainTask:
             grad_norm = 0.0
             if self.accelerator.sync_gradients:
                 grad_norm = self.accelerator.clip_grad_norm_(
-                    self.model.parameters(), self.config.max_grad_norm
+                    self.model.parameters(), self.config.optimizer.max_grad_norm
                 )
 
             self.optimizer.step()
@@ -310,7 +312,7 @@ class PretrainTask:
             training_state.tokens_seen = cumulative_tokens
 
             # Log metrics
-            if step % config.log_every_n == 0:
+            if step % config.logging.log_every_n == 0:
                 trackio.log(
                     {
                         "train_loss": round(loss, 4),
@@ -332,7 +334,7 @@ class PretrainTask:
             )
 
             # Periodic validation
-            if (step + 1) % config.val_check_interval == 0:
+            if (step + 1) % config.validation.val_check_interval == 0:
                 val_loss = self._validate()
                 trackio.log({"val_loss": round(val_loss, 4)})
 
@@ -349,9 +351,9 @@ class PretrainTask:
             # Save checkpoint every N steps (regardless of validation). Each
             # checkpoint embeds its own resumable state (see save_checkpoint), so a
             # crashed run can resume from the latest surviving checkpoint.
-            if (step + 1) % config.save_every_n_steps == 0:
+            if (step + 1) % config.checkpoint.save_every_n_steps == 0:
                 # If we just validated, skip the top-k save (already done above)
-                if (step + 1) % config.val_check_interval != 0:
+                if (step + 1) % config.validation.val_check_interval != 0:
                     # Use last validation loss or inf if no validation yet
                     save_loss = val_loss if val_loss > 0.0 else float("inf")
                     self.checkpoint_manager.save_checkpoint(
@@ -384,10 +386,12 @@ class PretrainTask:
         config = self.config
 
         # Checkpoint manager with model-specific and datetime-based subdirectory
-        experiment_name = config.experiment_name or config.model.name
-        save_dir = os.path.join(config.save_dir, experiment_name, config.run_name)
+        experiment_name = config.checkpoint.experiment_name or config.model.name
+        save_dir = os.path.join(
+            config.checkpoint.save_dir, experiment_name, config.run_name
+        )
         self.checkpoint_manager = CheckpointManager(
-            save_dir, config.save_top_k, self.tokenizer
+            save_dir, config.checkpoint.save_top_k, self.tokenizer
         )
 
         # Save training config alongside checkpoints
@@ -491,7 +495,7 @@ class PretrainTask:
         # Always save the final model (regardless of top-k) for resuming/further
         # training. Lives in a fixed `last/` dir alongside the top-k checkpoints and
         # embeds its own resumable state (see save_last_checkpoint).
-        if config.save_last:
+        if config.checkpoint.save_last:
             self.checkpoint_manager.save_last_checkpoint(
                 self.model, self.training_state.global_step, config, self.accelerator
             )
