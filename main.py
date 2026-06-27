@@ -6,7 +6,7 @@ from accelerate.utils import set_seed
 from omegaconf import DictConfig, OmegaConf
 
 from pretrain.config import TrainingConfig
-from pretrain.trainer import train
+from pretrain.task import PretrainTask
 
 set_seed(0)
 
@@ -26,7 +26,7 @@ def main(cfg: DictConfig) -> None:
         space_id=None,
     )
 
-    train(config)
+    PretrainTask(config).train()
 
     trackio.finish()
 

@@ -1,3 +1,3 @@
-from .checkpoint import CheckpointManager
+from .checkpoint import CheckpointManager, TrainingState
 
-__all__ = ["CheckpointManager"]
+__all__ = ["CheckpointManager", "TrainingState"]

@@ -61,10 +61,6 @@ class PretrainDataLoader:
         )
 
     def val_dataloader(self, size: int = int(5e2)):
-        # Load packed or unpacked data based on config
-        # if self.use_packed_data:
-        #     data_path = f"tokenized_data/packed_train_data_{self.max_seq_length}"
-        # else:
         data_path = "tokenized_data/test"
 
         val = load_from_disk(data_path)

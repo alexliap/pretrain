@@ -9,19 +9,49 @@ from transformers import PreTrainedModel
 from pretrain.config import TrainingConfig
 
 
+class TrainingState:
+    """Lightweight, checkpointable training progress counters.
+
+    Registered with ``accelerator.register_for_checkpointing`` so it is saved
+    and restored together with the model/optimizer/scheduler by
+    ``accelerator.save_state`` / ``load_state``. This is what lets a resumed run
+    continue from the same global step, epoch, and token count.
+    """
+
+    def __init__(self):
+        self.epoch = 0
+        self.global_step = 0
+        self.step_in_epoch = 0  # steps completed within the current epoch
+        self.tokens_seen = 0
+
+    def state_dict(self) -> dict:
+        return {
+            "epoch": self.epoch,
+            "global_step": self.global_step,
+            "step_in_epoch": self.step_in_epoch,
+            "tokens_seen": self.tokens_seen,
+        }
+
+    def load_state_dict(self, state_dict: dict) -> None:
+        self.__dict__.update(state_dict)
+
+
 class CheckpointManager:
     """Manages top-k checkpoints based on validation loss."""
 
-    def __init__(self, save_dir: str, top_k: int):
+    def __init__(self, save_dir: str, top_k: int, tokenizer=None):
         """Initialize checkpoint manager.
 
         Args:
             save_dir: Directory to save checkpoints
             top_k: Number of best checkpoints to keep
+            tokenizer: Optional tokenizer saved alongside every model checkpoint
+                so each checkpoint dir is self-contained for loading.
         """
         self.save_dir = Path(save_dir)
         self.save_dir.mkdir(parents=True, exist_ok=True)
         self.top_k = top_k
+        self.tokenizer = tokenizer
         # Max heap (negated losses): (-val_loss, step, path)
         # Worst checkpoint (largest real loss) is at index 0
         self.checkpoints: list[tuple[float, int, str]] = []
@@ -70,7 +100,15 @@ class CheckpointManager:
                 safe_serialization=True,
                 max_shard_size=config.max_shard_size,
             )
+            if self.tokenizer is not None:
+                self.tokenizer.save_pretrained(checkpoint_path)
             accelerator.print(f"Saved checkpoint: {checkpoint_path}")
+
+        # Save full training state (optimizer/scheduler/RNG/counters) into the
+        # checkpoint so it is self-contained and resumable. Collective call:
+        # every process must run it, so it stays outside the is_main_process
+        # guard above.
+        accelerator.save_state(str(checkpoint_path / "state"))
 
         # Update checkpoint tracking (negate loss for max-heap behavior)
         heapq.heappush(self.checkpoints, (-val_loss, step, str(checkpoint_path)))
@@ -115,7 +153,12 @@ class CheckpointManager:
                 safe_serialization=True,
                 max_shard_size=config.max_shard_size,
             )
+            if self.tokenizer is not None:
+                self.tokenizer.save_pretrained(checkpoint_path)
             accelerator.print(f"Saved last checkpoint: {checkpoint_path} (step {step})")
+
+        # Self-contained resumable state (collective call, all processes).
+        accelerator.save_state(str(checkpoint_path / "state"))
 
     def get_best_checkpoint(self) -> str | None:
         """Get path to best checkpoint.
