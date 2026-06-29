@@ -22,6 +22,7 @@ dependencies = [
     "hydra-core>=1.3.0",
     "kernels>=0.12,<0.13",
     "omegaconf>=2.3.0",
+    "peft>=0.17",
     "polars>=1.37.1",
     "trackio[gpu]>=0.15.0",
     "transformers>5.0.0",

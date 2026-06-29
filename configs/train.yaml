@@ -14,7 +14,17 @@ saved_checkpoint_path: "./models/lfm2_5_base/"
 compile: "torch"
 num_epochs: 1
 total_steps: 100
-total_tokens: 1_000_000
+total_tokens: 500_000_000
+
+# LoRA adapter (optional). Omit or set to null for full-parameter training.
+# When set, the model is wrapped with a LoRA adapter and only the adapter is
+# saved into each checkpoint (the base comes from saved_checkpoint_path).
+# Recommended to set `compile: null` when using LoRA.
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.00
+  target_modules: ["q_proj", "v_proj"]   # null lets peft auto-infer instead
 
 # Data
 data:
@@ -22,7 +32,7 @@ data:
   max_seq_length: 2048
   use_packed_data: true
   num_workers: 4
-  batch_size: 14
+  batch_size: 24
 
 # Optimizer
 optimizer:
@@ -50,7 +60,7 @@ validation:
 
 # Logging
 logging:
-  project_name: "lfm2_5_base_cpt_gr"
+  project_name: "lfm2_5_base_lora_cpt_gr"
   auto_log_gpu: true
   log_every_n: 10
 

@@ -72,6 +72,22 @@ class CheckpointManager:
         worst_loss = -self.checkpoints[0][0]
         return val_loss < worst_loss
 
+    def _save_pretrained(self, unwrapped_model, checkpoint_path, config) -> None:
+        """Persist a model to ``checkpoint_path`` (main process only).
+
+        For a PEFT model this writes the adapter only (``adapter_config.json`` +
+        ``adapter_model.safetensors``) — the base weights are not duplicated, and
+        ``max_shard_size`` is not applicable. For a full model it shards as usual.
+        """
+        if hasattr(unwrapped_model, "peft_config"):
+            unwrapped_model.save_pretrained(checkpoint_path, safe_serialization=True)
+        else:
+            unwrapped_model.save_pretrained(
+                checkpoint_path,
+                safe_serialization=True,
+                max_shard_size=config.checkpoint.max_shard_size,
+            )
+
     def save_checkpoint(
         self,
         model: PreTrainedModel,
@@ -95,11 +111,7 @@ class CheckpointManager:
         # Save model using accelerator (handles distributed saving)
         unwrapped_model = accelerator.unwrap_model(model)
         if accelerator.is_main_process:
-            unwrapped_model.save_pretrained(
-                checkpoint_path,
-                safe_serialization=True,
-                max_shard_size=config.checkpoint.max_shard_size,
-            )
+            self._save_pretrained(unwrapped_model, checkpoint_path, config)
             if self.tokenizer is not None:
                 self.tokenizer.save_pretrained(checkpoint_path)
             accelerator.print(f"Saved checkpoint: {checkpoint_path}")
@@ -150,11 +162,7 @@ class CheckpointManager:
         if accelerator.is_main_process:
             if os.path.exists(checkpoint_path):
                 shutil.rmtree(checkpoint_path)
-            unwrapped_model.save_pretrained(
-                checkpoint_path,
-                safe_serialization=True,
-                max_shard_size=config.checkpoint.max_shard_size,
-            )
+            self._save_pretrained(unwrapped_model, checkpoint_path, config)
             if self.tokenizer is not None:
                 self.tokenizer.save_pretrained(checkpoint_path)
             accelerator.print(f"Saved last checkpoint: {checkpoint_path} (step {step})")

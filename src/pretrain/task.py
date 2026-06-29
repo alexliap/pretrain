@@ -4,6 +4,9 @@ import torch
 import trackio
 import yaml
 from accelerate import Accelerator
+from accelerate.utils import broadcast_object_list
+from peft import LoraConfig as PeftLoraConfig
+from peft import get_peft_model
 from torch.optim.lr_scheduler import LinearLR
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -92,6 +95,21 @@ class PretrainTask:
             )
             model_config = model.config
 
+        # Optionally wrap the base model with a LoRA adapter. Done uniformly for
+        # all build paths and before compile/prepare. On the resume path the
+        # adapter starts fresh here but is overwritten by accelerator.load_state.
+        if config.lora is not None:
+            lora_cfg = PeftLoraConfig(
+                r=config.lora.r,
+                lora_alpha=config.lora.lora_alpha,
+                lora_dropout=config.lora.lora_dropout,
+                target_modules=config.lora.target_modules,
+                bias="none",
+                task_type="CAUSAL_LM",
+            )
+            model = get_peft_model(model, lora_cfg)
+            model.print_trainable_parameters()
+
         if self.config.compile == "torch":
             torch.set_float32_matmul_precision("high")
             model = torch.compile(model)  # Disabled due to stride mismatch issue
@@ -125,7 +143,9 @@ class PretrainTask:
         config = self.config
 
         self.optimizer = torch.optim.AdamW(
-            self.model.parameters(),
+            # Only trainable params — under LoRA this is just the adapter; for
+            # full training every param requires grad, so this is a no-op.
+            filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=config.optimizer.learning_rate,
             eps=config.optimizer.eps,
             betas=config.optimizer.betas,
@@ -235,6 +255,17 @@ class PretrainTask:
                 val_progress_bar.set_postfix({"val_loss": f"{loss:.4f}"})
 
         avg_val_loss = total_val_loss / len(self.val_dataloader)
+
+        # Average across processes so every rank agrees on the validation loss.
+        # Each rank only sees its shard of the (prepared) val dataloader, so the
+        # per-rank averages differ. Reducing here gives the true val-set loss and,
+        # crucially, keeps it identical on every rank — checkpoint directory names
+        # embed the loss, so divergent values make non-main ranks write orphaned
+        # state-only checkpoint dirs that never get pruned.
+        avg_val_loss = self.accelerator.reduce(
+            torch.tensor(avg_val_loss, device=self.accelerator.device),
+            reduction="mean",
+        ).item()
         self.model.train()
 
         return avg_val_loss
@@ -385,11 +416,16 @@ class PretrainTask:
         """
         config = self.config
 
+        # run_name uses wall-clock time and is evaluated per-process; broadcast the
+        # main process's value so every rank writes into the SAME run directory
+        # (otherwise ranks that cross a minute boundary split into separate dirs).
+        run_name = [config.run_name]
+        broadcast_object_list(run_name, from_process=0)
+        run_name = run_name[0]
+
         # Checkpoint manager with model-specific and datetime-based subdirectory
         experiment_name = config.checkpoint.experiment_name or config.model.name
-        save_dir = os.path.join(
-            config.checkpoint.save_dir, experiment_name, config.run_name
-        )
+        save_dir = os.path.join(config.checkpoint.save_dir, experiment_name, run_name)
         self.checkpoint_manager = CheckpointManager(
             save_dir, config.checkpoint.save_top_k, self.tokenizer
         )

@@ -99,6 +99,25 @@ class LoggingConfig:
 
 
 @dataclass
+class LoraConfig:
+    """LoRA adapter settings (maps onto peft's LoraConfig).
+
+    Present this section to train with a LoRA adapter; leave it unset (the
+    default ``None`` on TrainingConfig) for full-parameter training.
+    """
+
+    r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    # Defaults to the attention query/value projections. Set to None to let peft
+    # auto-infer the target modules for the architecture.
+    target_modules: list[str] | None = field(
+        default_factory=lambda: ["q_proj", "v_proj"]
+    )
+    init_lora_weights: str = "lora"
+
+
+@dataclass
 class CheckpointConfig:
     """Configuration for checkpoint saving."""
 
@@ -136,6 +155,9 @@ class TrainingConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     checkpoint: CheckpointConfig = field(default_factory=CheckpointConfig)
     evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
+
+    # Optional LoRA adapter; None means full-parameter training.
+    lora: LoraConfig | None = None
 
     # Run-level fields (kept top-level on purpose)
     saved_checkpoint_path: str | None = None
@@ -182,6 +204,11 @@ class TrainingConfig:
             "checkpoint": CheckpointConfig,
         }
         sections = {name: cls(**d.pop(name, {})) for name, cls in section_types.items()}
+
+        # `lora` is optional: absent or null means full training. A present
+        # section (even empty) enables LoRA, with defaults for unspecified fields.
+        lora_dict = d.pop("lora", None)
+        sections["lora"] = LoraConfig(**lora_dict) if lora_dict is not None else None
 
         eval_dict = d.pop("evaluation", {})
         if eval_dict:

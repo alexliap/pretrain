@@ -220,6 +220,19 @@ validation:
 ### Dataset Packing
 Combines multiple examples into fixed-length sequences to achieve near 100% token utilization (no padding waste). Enable with `use_packed_data: true`.
 
+### LoRA / PEFT Fine-Tuning
+Add a `lora` section to the config to train a LoRA adapter (via HuggingFace `peft`) instead of full-parameter training. When `lora` is absent (the default), training is full-parameter.
+
+```yaml
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["q_proj", "v_proj"]   # default; null lets peft auto-infer instead
+```
+
+Only the adapter is trained (the base model is frozen), and each checkpoint stores the adapter **separately** — `adapter_config.json` + `adapter_model.safetensors`, not a full model copy. The base model is taken from `saved_checkpoint_path`. When using LoRA it's recommended to set `compile: null`.
+
 ### Checkpoint Management
 Automatically saves the top-K best checkpoints based on validation loss. Older/worse checkpoints are removed to save disk space.
 
