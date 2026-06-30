@@ -139,25 +139,25 @@ def main():
         description="Pack tokenized dataset into fixed-length sequences"
     )
     parser.add_argument(
-        "--max_seq_length",
+        "--max-seq-length",
         type=int,
         default=2048,
         help="Maximum sequence length for packed sequences (default: 2048)",
     )
     parser.add_argument(
-        "--input_dir",
+        "--input-dir",
         type=str,
-        default="tokenized_data/train_data",
+        default="tokenized_data/train",
         help="Input directory containing tokenized dataset (default: tokenized_data/train_data)",
     )
     parser.add_argument(
-        "--output_dir",
+        "--output-dir",
         type=str,
         default=None,
         help="Output directory for packed dataset (default: tokenized_data/packed_train_data_{max_seq_length})",
     )
     parser.add_argument(
-        "--eos_token_id",
+        "--eos-token-id",
         type=int,
         default=0,
         help="EOS/PAD token ID for padding (default: 0)",

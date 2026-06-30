@@ -14,13 +14,14 @@ logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     # Get direct HTTP URLs for the parquet files
-    repo_id = "alexliap/high-quality-gr-text"
+    repo_id = "alexliap/greek-synth-v1"
     repo_type = "dataset"
 
     fs = HfFileSystem()
     file_paths = [
         p.removeprefix(f"datasets/{repo_id}/")
         for p in fs.glob(f"datasets/{repo_id}/**/*.parquet")
+        # if "/enwiki/" in p
     ]
 
     urls_by_dataset: dict[str, list[str]] = defaultdict(list)
@@ -34,4 +35,4 @@ if __name__ == "__main__":
         out_dir = Path("data") / dataset
         out_dir.mkdir(parents=True, exist_ok=True)
         print(f"Reading {len(urls)} files for {dataset}")
-        pl.scan_parquet(urls).sink_ndjson(out_dir / "train_data.jsonl")
+        pl.scan_parquet(urls).sink_parquet(out_dir / "train_data.parquet")
