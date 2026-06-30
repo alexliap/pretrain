@@ -52,7 +52,8 @@ class DataConfig:
     max_seq_length: int = 2048  # Context window size for packing
     use_packed_data: bool = True  # Whether to use packed dataset
     num_workers: int = 0
-    batch_size: int = 16
+    train_batch_size: int = 16
+    val_batch_size: int = 4
 
 
 @dataclass
@@ -127,6 +128,7 @@ class CheckpointConfig:
     # group. Set this explicitly (e.g. when resuming from saved_checkpoint_path)
     # so the run dir isn't tied to an unused model config name.
     experiment_name: str | None = None
+    run_name: str | None = None
     save_top_k: int = 3
     save_every_n_steps: int = 1000
     save_last: bool = True
@@ -172,18 +174,15 @@ class TrainingConfig:
                 "At least one of 'model.base_model' or 'saved_checkpoint_path' must be provided"
             )
 
+        # Default the run name to a timestamp when not set explicitly in config.
+        # Set checkpoint.run_name in the config to override with a custom name.
+        if not self.checkpoint.run_name:
+            now = datetime.now()
+            self.checkpoint.run_name = f"{now.date()}-{now.hour}-{now.minute}"
+
     @property
     def warmup_start_factor(self):
         return self.optimizer.learning_rate / self.scheduler.warmup_steps
-
-    @property
-    def run_name(self):
-        run_name = ""
-        run_name += str(datetime.now().date())
-        run_name += (
-            "-" + str(str(datetime.now().hour)) + "-" + str(str(datetime.now().minute))
-        )
-        return run_name
 
     def get_dict(self):
         return asdict(self)

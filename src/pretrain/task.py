@@ -1,3 +1,5 @@
+import gc
+import json
 import os
 
 import torch
@@ -76,11 +78,23 @@ class PretrainTask:
             # restored later by accelerator.load_state from the saved training state.
             # Building from config (not from_pretrained) means we don't depend on HF
             # weights being present in the checkpoint dir — just its config.json.
-            print(
-                f"Resuming: building model architecture from "
-                f"{config.saved_checkpoint_path} ..."
+            #
+            # A LoRA checkpoint holds only the adapter (adapter_config.json, no
+            # config.json), so the base architecture config is read from the
+            # adapter's base_model_name_or_path instead of the checkpoint dir.
+            adapter_config_path = os.path.join(
+                config.saved_checkpoint_path, "adapter_config.json"
             )
-            model_config = AutoConfig.from_pretrained(config.saved_checkpoint_path)
+            if os.path.exists(adapter_config_path):
+                with open(adapter_config_path) as f:
+                    config_source = json.load(f)["base_model_name_or_path"]
+            else:
+                config_source = config.saved_checkpoint_path
+
+            print(
+                f"Resuming: building model architecture from {config_source} ..."
+            )
+            model_config = AutoConfig.from_pretrained(config_source)
             model = AutoModelForCausalLM.from_config(
                 model_config,
                 dtype=torch.bfloat16,
@@ -123,7 +137,8 @@ class PretrainTask:
         config = self.config
         self.dataloader = PretrainDataLoader(
             num_workers=config.data.num_workers,
-            batch_size=config.data.batch_size,
+            train_batch_size=config.data.train_batch_size,
+            val_batch_size=config.data.val_batch_size,
             max_seq_length=config.data.max_seq_length,
             use_packed_data=config.data.use_packed_data,
         )
@@ -184,15 +199,20 @@ class PretrainTask:
         )
         self.accelerator.print("=" * 50 + "\n")
 
-    def _compute_loss(self, batch: dict) -> torch.Tensor:
+    def _compute_loss(self, batch: dict, model=None) -> torch.Tensor:
         """Compute loss for a single batch.
 
         Args:
             batch: Batch of data containing input_ids
+            model: Model to run the forward pass with. Defaults to self.model
+                (compiled). Validation passes the eager model to avoid recompiles
+                on its variable-length, masked batches.
 
         Returns:
             Loss tensor
         """
+        model = model if model is not None else self.model
+
         input_ids = batch["input_ids"]
         attention_mask = batch.get("attention_mask")
 
@@ -202,7 +222,7 @@ class PretrainTask:
         if attention_mask is not None:
             labels[attention_mask == 0] = -100
 
-        outputs = self.model(input_ids, attention_mask=attention_mask, labels=labels)
+        outputs = model(input_ids, attention_mask=attention_mask, labels=labels)
         return outputs.loss if hasattr(outputs, "loss") else outputs
 
     def _training_step(self, batch: dict) -> tuple[float, float, float]:
@@ -241,6 +261,20 @@ class PretrainTask:
         self.model.eval()
         total_val_loss = 0.0
 
+        # Run validation on the eager (un-compiled) model. Validation batches are
+        # padded and carry an attention mask, which would otherwise force the
+        # compiled model to recompile/graph-break every batch. unwrap_model strips
+        # the DDP wrapper; _orig_mod strips the torch.compile wrapper if present.
+        eval_model = self.accelerator.unwrap_model(self.model)
+        eval_model = getattr(eval_model, "_orig_mod", eval_model)
+
+        # The eager loss path materializes full float32 [B, T, vocab] logits that
+        # the compiled training path fuses away. Release the cached training pool
+        # so that allocation has room (otherwise validation can OOM even though
+        # training fit).
+        gc.collect()
+        torch.cuda.empty_cache()
+
         val_progress_bar = tqdm(
             self.val_dataloader,
             desc="Validating",
@@ -250,7 +284,7 @@ class PretrainTask:
 
         with torch.no_grad():
             for val_batch in val_progress_bar:
-                loss = self._compute_loss(val_batch).item()
+                loss = self._compute_loss(val_batch, model=eval_model).item()
                 total_val_loss += loss
                 val_progress_bar.set_postfix({"val_loss": f"{loss:.4f}"})
 
@@ -267,6 +301,11 @@ class PretrainTask:
             reduction="mean",
         ).item()
         self.model.train()
+
+        # Free the validation allocations before resuming the compiled training
+        # loop so its memory pool isn't fragmented by eager-validation buffers.
+        gc.collect()
+        torch.cuda.empty_cache()
 
         return avg_val_loss
 
@@ -419,7 +458,7 @@ class PretrainTask:
         # run_name uses wall-clock time and is evaluated per-process; broadcast the
         # main process's value so every rank writes into the SAME run directory
         # (otherwise ranks that cross a minute boundary split into separate dirs).
-        run_name = [config.run_name]
+        run_name = [config.checkpoint.run_name]
         broadcast_object_list(run_name, from_process=0)
         run_name = run_name[0]
 
@@ -471,6 +510,51 @@ class PretrainTask:
                 return True
         return False
 
+    def _log_token_distribution(self) -> None:
+        """Log the per-source token distribution recorded at tokenization time."""
+        dist_path = "tokenized_data/token_distribution.json"
+        if not os.path.exists(dist_path):
+            self.accelerator.print(
+                f"No token distribution found at {dist_path}; skipping."
+            )
+            return
+
+        with open(dist_path) as f:
+            distribution = json.load(f)
+
+        total_tokens = distribution.get("total_tokens", 0)
+        tokens_per_source = distribution.get("tokens_per_source", {})
+        percentages = distribution.get("percentages", {})
+
+        # Console summary (printed once, on the main process).
+        self.accelerator.print("\n" + "=" * 50)
+        self.accelerator.print("TOKEN DISTRIBUTION")
+        self.accelerator.print("=" * 50)
+        self.accelerator.print(f"Total tokens: {total_tokens:,}")
+        for source, pct in sorted(
+            percentages.items(), key=lambda kv: kv[1], reverse=True
+        ):
+            n = tokens_per_source.get(source, 0)
+            self.accelerator.print(f"  {source:<20} {n:>15,} ({pct:.1%})")
+        self.accelerator.print("=" * 50 + "\n")
+
+        # Save the distribution file to the trackio project's files directory.
+        if self.accelerator.is_main_process:
+            trackio.save(dist_path)
+
+    def _save_config(self) -> None:
+        """Save the resolved run config to the trackio project's files directory."""
+        if not self.accelerator.is_main_process:
+            return
+
+        config_path = "config.yaml"
+        with open(config_path, "w") as f:
+            yaml.safe_dump(self.config.get_dict(), f, sort_keys=False)
+        try:
+            trackio.save(config_path)
+        finally:
+            os.remove(config_path)
+
     def train(self) -> None:
         """Orchestrate the full pretraining run."""
         config = self.config
@@ -483,6 +567,8 @@ class PretrainTask:
         self._init_dataloader()
         self._init_train_dataloader()
         self._init_validation_dataloader()
+        self._log_token_distribution()
+        self._save_config()
         self._init_optimizer_and_scheduler()
 
         # Prepare with accelerator
