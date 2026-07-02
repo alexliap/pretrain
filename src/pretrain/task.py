@@ -254,7 +254,7 @@ class PretrainTask:
 
             current_lr = self.scheduler.get_last_lr()[0]
 
-            return loss.item(), current_lr, grad_norm.item()
+            return loss, current_lr, grad_norm.item()
 
     def _validate(self) -> float:
         """Run validation and return average loss."""
@@ -300,6 +300,7 @@ class PretrainTask:
             torch.tensor(avg_val_loss, device=self.accelerator.device),
             reduction="mean",
         ).item()
+
         self.model.train()
 
         # Free the validation allocations before resuming the compiled training
@@ -368,7 +369,13 @@ class PretrainTask:
             # Training step
             loss, current_lr, grad_norm = self._training_step(batch)
             # Count the actual tokens in this batch (handles uneven batch sizes).
-            batch_tokens = int(batch["input_ids"].numel())
+            per_device_batch_tokens = int(batch["input_ids"].numel())
+
+            batch_tokens = self.accelerator.reduce(
+                torch.tensor(per_device_batch_tokens, device=self.accelerator.device),
+                reduction="sum",
+            ).item()
+
             cumulative_tokens += batch_tokens
 
             # Advance the progress bar by tokens (token mode) or by step (otherwise).
@@ -383,9 +390,13 @@ class PretrainTask:
 
             # Log metrics
             if step % config.logging.log_every_n == 0:
+                # reduced loss across all ranks is reported in trackio
+                global_loss = self.accelerator.reduce(
+                    loss.detach(), reduction="mean"
+                ).item()
                 trackio.log(
                     {
-                        "train_loss": round(loss, 4),
+                        "train_loss": round(global_loss, 4),
                         "learning_rate": current_lr,
                         "grad_norm": round(grad_norm, 4),
                         "tokens_passed": cumulative_tokens,
@@ -394,6 +405,7 @@ class PretrainTask:
                 )
 
             # Update progress bar
+            # Main process loss reported, not global
             progress_bar.set_postfix(
                 {
                     "loss": f"{loss:.4f}",

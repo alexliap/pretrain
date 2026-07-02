@@ -256,4 +256,4 @@ test.py
 tokenized_data/
 checkpoints/
 models/
-./data/
+./data
