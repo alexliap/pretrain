@@ -1,5 +1,6 @@
 """Configuration for training."""
 
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 
@@ -179,6 +180,19 @@ class TrainingConfig:
         if not self.checkpoint.run_name:
             now = datetime.now()
             self.checkpoint.run_name = f"{now.date()}-{now.hour}-{now.minute}"
+
+    @property
+    def is_resuming(self) -> bool:
+        """True when this run continues a checkpoint's saved training state.
+
+        Mirrors the condition in ``PretrainTask._maybe_resume``: a resume only
+        happens when ``saved_checkpoint_path`` carries a ``state`` dir. Loading
+        weights without that dir is a fresh run, not a resume — so logging should
+        continue the existing experiment-tracker run only in the former case.
+        """
+        if self.saved_checkpoint_path is None:
+            return False
+        return os.path.isdir(os.path.join(self.saved_checkpoint_path, "state"))
 
     @property
     def warmup_start_factor(self):

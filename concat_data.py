@@ -9,13 +9,13 @@ SEED = 0
 # Number of rows to keep per dataset. Keys must match the dataset directory
 # names under data/ (e.g. "finewiki_el"). Use None to keep all rows.
 DATASET_WEIGHTS = {
-    "finewiki_el": 200_000,
-    "fineweb_hq_el": 1_000_000,
-    "math": 300_000,
-    "table": 300_000,
-    "faq": 300_000,
-    "tutorial": 300_000,
-    "enwiki": 400_000,
+    "finewiki_el": 220_000,
+    "fineweb_hq_el": 2_200_000,
+    "math": 400_000,
+    "table": 400_000,
+    "faq": 400_000,
+    "tutorial": 400_000,
+    "enwiki": 1_000_000,
 }
 
 

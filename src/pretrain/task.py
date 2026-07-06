@@ -510,16 +510,15 @@ class PretrainTask:
             True if the run resumed from a saved state, False otherwise.
         """
         config = self.config
-        if config.saved_checkpoint_path is not None:
+        if config.is_resuming:
             state_dir = os.path.join(config.saved_checkpoint_path, "state")
-            if os.path.isdir(state_dir):
-                self.accelerator.load_state(state_dir)
-                self.accelerator.print(
-                    f"Resumed from {state_dir}: epoch {self.training_state.epoch}, "
-                    f"global_step {self.training_state.global_step}, "
-                    f"tokens {self.training_state.tokens_seen}"
-                )
-                return True
+            self.accelerator.load_state(state_dir)
+            self.accelerator.print(
+                f"Resumed from {state_dir}: epoch {self.training_state.epoch}, "
+                f"global_step {self.training_state.global_step}, "
+                f"tokens {self.training_state.tokens_seen}"
+            )
+            return True
         return False
 
     def _log_token_distribution(self) -> None:

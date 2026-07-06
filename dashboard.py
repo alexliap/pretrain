@@ -18,7 +18,7 @@ if __name__ == "__main__":
     project = sys.argv[1] if len(sys.argv) > 1 else None
 
     # block_thread=True keeps the server alive until Ctrl+C.
-    _, _, _, full_url = trackio.show(project=project, block_thread=False)
+    _, _, _, full_url = trackio.show(project=project, block_thread=False, host="0.0.0.0")
 
     print("\n" + "=" * 70)
     print("Write-enabled dashboard (delete/rename works here):")

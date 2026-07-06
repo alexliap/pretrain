@@ -253,7 +253,7 @@ test.py
 *_tokenizer/
 *.jsonl
 *_cache/
-tokenized_data/
+/tokenized_data
 checkpoints/
 models/
-./data
+/data
