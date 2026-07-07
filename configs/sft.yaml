@@ -1,0 +1,76 @@
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+  output_subdir: null
+  run:
+    dir: .
+
+# Where SFT starts from: a merged-CPT dir or the raw base. tokenizer_path
+# defaults to model_name_or_path when null.
+model_name_or_path: "./models/lfm2_5_base_plus_adapter_plus_delta_v5_10b_r64"
+tokenizer_path: null
+
+# Chat-template override with {% generation %} markers so assistant-only loss
+# works on conversational data (the shipped LFM2 template has no markers). Set
+# to null to keep the tokenizer's own template.
+chat_template_path: "./configs/lfm2_chatml_gen.jinja"
+
+attn_implementation: "kernels-community/flash-attn2"
+run_name: "base_plus_adapter_r64_a64_v5_sft_r32_a32"   # trackio run name; null -> timestamped "sft-<date>"
+
+# LoRA adapter (optional). Omit or set to null for full-parameter SFT.
+lora:
+  r: 32
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["q_proj", "v_proj"]   # null lets peft auto-infer instead
+
+# Dataset
+dataset:
+  dataset_id: "KIEFERSA/ALPHA-V2-SFT"                # HF hub id, or a local save_to_disk directory
+  dataset_split: "train"
+  eval_split: "validation"
+  # "conversational" = rows of {"messages": [{"role", "content"}, ...]}.
+  dataset_format: "conversational"      # or "prompt_completion" / "text"
+  dataset_text_field: "text"
+  shuffle: true                         # one-time shuffle of the train split at startup
+  shuffle_seed: 0
+
+# SFT / TrainingArguments knobs (forwarded to trl.SFTConfig)
+sft:
+  output_dir: "checkpoints/lfm2_5_base_plus_adapter_r64_a64_v5_sft_r32_a32"
+  num_train_epochs: 1.0
+  max_steps: -1                 # set > 0 for quick smoke tests
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 1
+  learning_rate: 2e-5
+  lr_scheduler_type: "constant_with_warmup"   # linear warmup, then flat at learning_rate
+  warmup_ratio: 0.1                            # fraction of total steps spent warming up
+  warmup_steps: 0
+  max_grad_norm: 1.0
+  weight_decay: 0.0
+  max_length: 2048
+  packing: false
+  # Loss on assistant turns only (conversational data). Requires a chat template
+  # with {% generation %} markers — see chat_template_path above.
+  assistant_only_loss: true
+  completion_only_loss: null
+  bf16: true
+  gradient_checkpointing: false
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 1
+  eval_strategy: "steps"           # "steps" when eval_split is set
+  eval_steps: 500
+  # trackio logging is wired automatically via a custom callback (see
+  # pretrain.sft.task.TrackioCallback); no report_to setting needed.
+
+# Logging (trackio)
+logging:
+  project_name: "lfm2_5_sft"
+  auto_log_gpu: true
+  log_every_n: 10
