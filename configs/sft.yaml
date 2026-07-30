@@ -30,7 +30,7 @@ lora:
 
 # Dataset
 dataset:
-  dataset_id: "KIEFERSA/ALPHA-V2-SFT"                # HF hub id, or a local save_to_disk directory
+  dataset_id: "<dataset>"                # HF hub id, or a local save_to_disk directory
   dataset_split: "train"
   eval_split: "validation"
   # "conversational" = rows of {"messages": [{"role", "content"}, ...]}.
