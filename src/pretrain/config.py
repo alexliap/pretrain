@@ -42,7 +42,9 @@ class ModelConfig:
     intermediate_size: int = 1024
     head_dim: int = 128
     num_hidden_layers: int = 28
-    num_heads: int = 8
+    num_attention_heads: int = 8
+    num_key_value_heads: int | None = None
+    max_position_embeddings: int | None = None
 
 
 @dataclass
@@ -88,7 +90,7 @@ class ValidationConfig:
     """Configuration for periodic validation."""
 
     val_check_interval: int = 500
-    val_size: int = 10000
+    val_size: int | None = 10000
 
 
 @dataclass
@@ -165,6 +167,11 @@ class TrainingConfig:
     # Run-level fields (kept top-level on purpose)
     saved_checkpoint_path: str | None = None
     compile: str = "torch"
+    # Passed straight to AutoModelForCausalLM.from_config/from_pretrained. Defaults
+    # to PyTorch's built-in "sdpa" since custom Hub kernels (e.g.
+    # "kernels-community/flash-attn2/3") may not ship a compiled kernel image for
+    # newer GPU architectures (confirmed missing for Blackwell/sm_120).
+    attn_implementation: str = "sdpa"
     num_epochs: int = 1
     total_steps: int | None = None
     total_tokens: int | None = None

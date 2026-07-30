@@ -53,6 +53,9 @@ class PretrainTask:
         # Load tokenizer
         tokenizer = AutoTokenizer.from_pretrained(config.data.tokenizer_path)
         vocab_size = len(tokenizer)
+        bos_token_id = tokenizer.bos_token_id
+        eos_token_id = tokenizer.eos_token_id
+        pad_token_id = tokenizer.pad_token_id
 
         resuming = config.saved_checkpoint_path is not None and os.path.isdir(
             os.path.join(config.saved_checkpoint_path, "state")
@@ -65,13 +68,33 @@ class PretrainTask:
             model_config.intermediate_size = config.model.intermediate_size
             model_config.head_dim = config.model.head_dim
             model_config.num_hidden_layers = config.model.num_hidden_layers
-            model_config.num_heads = config.model.num_heads
+            model_config.num_attention_heads = config.model.num_attention_heads
+            if config.model.num_key_value_heads is not None:
+                model_config.num_key_value_heads = config.model.num_key_value_heads
+            if config.model.max_position_embeddings is not None:
+                model_config.max_position_embeddings = (
+                    config.model.max_position_embeddings
+                )
             model_config.vocab_size = vocab_size
+            model_config.bos_token_id = bos_token_id
+            model_config.eos_token_id = eos_token_id
+            model_config.pad_token_id = pad_token_id
+
+            # The base_model id is only a template for the architecture fields
+            # above; its rope scaling (e.g. long-context NTK scaling tuned for
+            # that checkpoint's own max_position_embeddings) does not carry over
+            # to a from-scratch model with a different context length. Reset to
+            # plain, unscaled RoPE at the default theta.
+            if hasattr(model_config, "rope_parameters"):
+                model_config.rope_parameters = {
+                    "rope_type": "default",
+                    "rope_theta": 10_000.0,
+                }
 
             model = AutoModelForCausalLM.from_config(
                 model_config,
                 dtype=torch.bfloat16,
-                attn_implementation="kernels-community/flash-attn2",
+                attn_implementation=config.attn_implementation,
             )
         elif resuming:
             # Resuming: only the architecture is needed here; the actual weights are
@@ -98,7 +121,7 @@ class PretrainTask:
             model = AutoModelForCausalLM.from_config(
                 model_config,
                 dtype=torch.bfloat16,
-                attn_implementation="kernels-community/flash-attn2",
+                attn_implementation=config.attn_implementation,
             )
         else:
             print(f"Loading model from checkpoint: {config.saved_checkpoint_path} ...")
@@ -388,21 +411,23 @@ class PretrainTask:
             training_state.step_in_epoch = step + 1
             training_state.tokens_seen = cumulative_tokens
 
-            # Log metrics
+            # Log metrics (main process only -- one shared trackio run, not one
+            # per DDP rank).
             if step % config.logging.log_every_n == 0:
                 # reduced loss across all ranks is reported in trackio
                 global_loss = self.accelerator.reduce(
                     loss.detach(), reduction="mean"
                 ).item()
-                trackio.log(
-                    {
-                        "train_loss": round(global_loss, 4),
-                        "learning_rate": current_lr,
-                        "grad_norm": round(grad_norm, 4),
-                        "tokens_passed": cumulative_tokens,
-                        "iteration": training_state.global_step,
-                    }
-                )
+                if self.accelerator.is_main_process:
+                    trackio.log(
+                        {
+                            "train_loss": round(global_loss, 4),
+                            "learning_rate": current_lr,
+                            "grad_norm": round(grad_norm, 4),
+                            "tokens_passed": cumulative_tokens,
+                            "iteration": training_state.global_step,
+                        }
+                    )
 
             # Update progress bar
             # Main process loss reported, not global
@@ -418,7 +443,8 @@ class PretrainTask:
             # Periodic validation
             if (step + 1) % config.validation.val_check_interval == 0:
                 val_loss = self._validate()
-                trackio.log({"val_loss": round(val_loss, 4)})
+                if self.accelerator.is_main_process:
+                    trackio.log({"val_loss": round(val_loss, 4)})
 
                 # Save checkpoint if it's in top-k (state is embedded inside it)
                 if self.checkpoint_manager.should_save(val_loss):
@@ -572,6 +598,23 @@ class PretrainTask:
 
         # Setup
         self._init_accelerator()
+
+        # Initialize logging. Only the main process talks to trackio -- under
+        # DDP every process runs this same code, and initializing on every rank
+        # would create one trackio run per rank instead of one shared run.
+        # Continue the existing tracker run when resuming from a checkpoint's
+        # saved state; otherwise start fresh ("allow" falls back to a new run if
+        # the name doesn't exist yet, so a first resume on a clean DB is fine).
+        if self.accelerator.is_main_process:
+            trackio.init(
+                project=config.logging.project_name,
+                auto_log_gpu=config.logging.auto_log_gpu,
+                name=config.checkpoint.run_name,
+                config=config.get_dict(),
+                space_id=None,
+                resume="allow" if config.is_resuming else "never",
+            )
+
         self._init_model_and_tokenizer()
         self._print_model_info()
 
@@ -639,3 +682,6 @@ class PretrainTask:
             self.accelerator.print(f"Best checkpoint: {best_checkpoint}")
 
         self.accelerator.print("Training complete!")
+
+        if self.accelerator.is_main_process:
+            trackio.finish()

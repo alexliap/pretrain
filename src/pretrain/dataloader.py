@@ -85,7 +85,7 @@ class PretrainDataLoader:
             collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
         )
 
-    def val_dataloader(self, size: int = int(5e2)):
+    def val_dataloader(self, size: int | None = int(5e2)):
         data_path = "tokenized_data/test"
 
         val = load_from_disk(data_path)
@@ -94,7 +94,9 @@ class PretrainDataLoader:
         if "attention_mask" in val.column_names:
             val = val.remove_columns(["attention_mask"])
 
-        val = val.select(range(size))
+        # size=None means "use the entire held-out split" instead of a fixed sample.
+        if size is not None:
+            val = val.select(range(size))
         val.set_format(type="torch", columns=["input_ids"])
 
         return DataLoader(

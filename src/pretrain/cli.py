@@ -3,12 +3,16 @@
 import argparse
 import logging
 
+from dotenv import load_dotenv
+
 from pretrain.data import download_dataset, tokenize_dataset
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
+
+load_dotenv()
 
 
 def _add_download_parser(subparsers: argparse._SubParsersAction) -> None:

@@ -1,13 +1,14 @@
 """Entry point for training."""
 
 import hydra
-import trackio
 from accelerate.utils import set_seed
+from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
 from pretrain.config import TrainingConfig
 from pretrain.task import PretrainTask
 
+load_dotenv()
 set_seed(0)
 
 
@@ -17,21 +18,10 @@ def main(cfg: DictConfig) -> None:
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     config = TrainingConfig.from_dict(cfg_dict)
 
-    # Initialize logging. Continue the existing tracker run when resuming from a
-    # checkpoint's saved state; otherwise start fresh ("allow" falls back to a new
-    # run if the name doesn't exist yet, so a first resume on a clean DB is fine).
-    trackio.init(
-        project=config.logging.project_name,
-        auto_log_gpu=config.logging.auto_log_gpu,
-        name=config.checkpoint.run_name,
-        config=config.get_dict(),
-        space_id=None,
-        resume="allow" if config.is_resuming else "never",
-    )
-
+    # Trackio init/finish and all logging happen inside PretrainTask, gated to
+    # the main process only -- under DDP every process runs this script, and
+    # initializing here unconditionally would create one trackio run per rank.
     PretrainTask(config).train()
-
-    trackio.finish()
 
 
 if __name__ == "__main__":
