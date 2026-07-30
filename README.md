@@ -1,23 +1,33 @@
 # Pretrain Experiment
 
-A lightweight language model pretraining framework using vanilla PyTorch and HuggingFace Accelerate for distributed training.
+A lightweight language model **pretraining / continued-pretraining / supervised fine-tuning** framework built on vanilla PyTorch and HuggingFace Accelerate for the (continued-)pretraining loop, and TRL's `SFTTrainer` for the SFT loop. Configuration is driven by Hydra, experiment tracking by trackio.
 
 ## Features
 
-- **Vanilla PyTorch**: Pure PyTorch implementation without heavy frameworks
+- **Vanilla PyTorch**: Pure PyTorch pretraining loop without heavy frameworks
 - **HuggingFace Accelerate**: Seamless distributed training support (multi-GPU, mixed precision)
-- **Hydra Configuration**: YAML-based configuration with composable model presets
+- **Hydra Configuration**: YAML-based configuration with composable model presets and CLI overrides
+- **Continued Pretraining (CPT)**: Resume/continue training from any checkpoint or pretrained model directory, optionally with a LoRA adapter
+- **Supervised Fine-Tuning (SFT)**: TRL-based SFT with conversational data and assistant-only loss
+- **LoRA / PEFT**: Train adapters instead of full parameters for both CPT and SFT (via `peft`)
+- **Adapter Merging**: Merge a trained LoRA adapter back into its base model to bridge CPT → SFT
 - **Mixed Precision Training**: Built-in bf16 support for faster training
 - **Gradient Accumulation**: Efficient training with large effective batch sizes
 - **Dataset Packing**: Efficient sequence packing to maximize token utilization
-- **Automatic Logging**: GPU metrics and training stats via trackio
+- **Crash-Safe Resume**: Full training-state checkpointing (step/epoch/tokens seen + dataloader position)
+- **Token-Budget Stopping**: Stop training after a target number of tokens (`total_tokens`)
+- **Automatic Logging**: GPU metrics and training stats via trackio, plus a write-enabled dashboard
 - **Custom Tokenizers**: Support for custom tokenizer training and usage
-- **Checkpoint Management**: Top-K checkpoint saving based on validation loss
+- **Checkpoint Management**: Top-K checkpoint saving based on validation loss (plus a fixed `last/`)
 - **Evaluation Benchmarks**: Built-in support for HumanEval, IFEVAL, and MMLU
 
-## Architecture
+## Model Architecture
 
-The model configuration currently only supports the **Qwen3** LLM architecture (for now). The framework provides predefined model size presets under `configs/model/`:
+The framework supports two ways of obtaining a model, and is **architecture-agnostic** on the load path:
+
+### From scratch (Qwen3 presets)
+
+When no `saved_checkpoint_path` is given, the model is built from a size preset under `configs/model/`. These presets currently target the **Qwen3** architecture:
 
 | Preset | Layers | Hidden Size | FFN Size | Head Dim | Heads |
 |--------|--------|-------------|----------|----------|-------|
@@ -29,68 +39,53 @@ The model configuration currently only supports the **Qwen3** LLM architecture (
 
 All presets use `Qwen/Qwen3-0.6B` as the base model config reference and support customizable vocabulary size via custom tokenizers.
 
-## Project Structure
+### From a checkpoint or pretrained directory (any HF causal LM)
 
-```
-pretrain/
-├── configs/
-│   ├── train.yaml             # Main training config (Hydra)
-│   └── model/                 # Model size presets
-│       ├── qwen_tiny.yaml
-│       ├── qwen_small.yaml
-│       ├── qwen_medium.yaml
-│       ├── qwen_large.yaml
-│       └── qwen_xlarge.yaml
-├── src/pretrain/
-│   ├── config.py              # Training configuration dataclasses (nested sections)
-│   ├── task.py                # PretrainTask: end-to-end training workflow + orchestrator
-│   ├── dataloader.py          # Dataset loading and packed/padded collation
-│   ├── cli.py                 # `pretrain-data` CLI (download, tokenize)
-│   ├── data/                  # Data download & tokenization helpers
-│   ├── checkpoint/            # Checkpoint management (top-K + last)
-│   └── evaluation/            # Benchmark evaluation (HumanEval, IFEVAL, MMLU)
-├── main.py                    # Entry point for training (Hydra)
-├── get_data.py                # Download raw parquet data from the Hub
-├── concat_data.py             # Concatenate raw files into a single parquet
-├── pack_data.py               # Dataset packing script
-├── dashboard.py               # Launch the trackio dashboard (write access)
-├── launch.sh / train.sh       # Accelerate launch helpers
-├── data/                      # Raw data storage
-└── tokenized_data/            # Tokenized and packed datasets
-```
+When `saved_checkpoint_path` (training) or `model_name_or_path` (SFT) points at a checkpoint or a saved model directory, the model is loaded via `AutoConfig`/`AutoModelForCausalLM`, so **any HuggingFace causal-LM architecture works** — the size presets are bypassed.
 
 ## Configuration
 
-Training is configured via Hydra YAML files. The main config is `configs/train.yaml`, which composes a model preset via defaults:
-
-Settings are grouped into per-concern sections (`data`, `optimizer`, `scheduler`,
-`accelerate`, `validation`, `logging`, `checkpoint`, `evaluation`), with run-level
-fields kept at the top level:
+Training is configured via Hydra YAML files. The main (continued-)pretraining config is `configs/train.yaml`, which composes a model preset via `defaults`. Settings are grouped into per-concern sections (`data`, `optimizer`, `scheduler`, `accelerate`, `validation`, `logging`, `checkpoint`, `evaluation`, and an optional `lora`), with run-level fields kept at the top level:
 
 ```yaml
 defaults:
-  - model: qwen_small  # or qwen_tiny, qwen_medium, qwen_large, qwen_xlarge
+  - model: qwen_small   # or qwen_tiny, qwen_medium, qwen_large, qwen_xlarge
+  - _self_
 
 # Run-level (top-level)
+saved_checkpoint_path: null    # continue from a checkpoint / pretrained dir; null = build from preset
+compile: "torch"               # torch.compile; set null (recommended with LoRA)
 num_epochs: 1
 total_steps: null
-total_tokens: null
+total_tokens: null             # token-budget stop (highest priority when set)
+
+# LoRA adapter (optional). Omit / null for full-parameter training.
+lora:
+  r: 32
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: ["q_proj", "v_proj"]   # null lets peft auto-infer
 
 # Data
 data:
-  tokenizer_path: "tokenizer/"
-  max_seq_length: 512
+  tokenizer_path: "./models/lfm2_5_base/"
+  max_seq_length: 2048
   use_packed_data: true
-  batch_size: 16
+  num_workers: 4
+  train_batch_size: 8
+  val_batch_size: 8
 
 # Optimizer (incl. gradient clipping)
 optimizer:
-  learning_rate: 1e-4
+  learning_rate: 8e-5
+  weight_decay: 0.01
+  betas: [0.9, 0.95]
+  eps: 1e-10
   max_grad_norm: 1.0
 
 # Scheduler
 scheduler:
-  warmup_steps: 500
+  warmup_steps: 1000
 
 # Accelerate
 accelerate:
@@ -99,40 +94,45 @@ accelerate:
 
 # Validation
 validation:
-  val_check_interval: 1000
-  val_size: 15000
-
-# Checkpointing
-checkpoint:
-  save_top_k: 3
-  save_every_n_steps: 500
+  val_check_interval: 4000   # steps
+  val_size: 80000            # held-out validation samples
 
 # Logging
 logging:
-  project_name: "scaling-laws"
+  project_name: "my-cpt-run"
   auto_log_gpu: true
+  log_every_n: 10
+
+# Checkpointing
+checkpoint:
+  save_dir: "checkpoints"
+  experiment_name: null      # subdir under save_dir; falls back to model.name when null
+  run_name: null             # nested run subdir; defaults to a timestamp when null
+  save_top_k: 1
+  save_every_n_steps: 4000
+  save_last: true
+  max_shard_size: "5GB"
 ```
 
-You can override any parameter from the command line using its section path:
+Override any parameter from the command line using its section path:
+
 ```bash
-python main.py data.batch_size=32 optimizer.learning_rate=3e-4 model=qwen_medium
+python main.py data.train_batch_size=32 optimizer.learning_rate=3e-4 model=qwen_medium
 ```
 
 ## Usage
 
 ### 1. Download Data
 
-Download bilingual Greek-English text data from the HuggingFace Hub:
+Download raw parquet data from the Hub (writes per-dataset files under `data/`) with the CLI:
 
 ```bash
-python get_data.py
+uv run pretrain-data download <repo_id> <local_dir>
 ```
 
-Alternatively, fetch any Hub dataset with the CLI: `uv run pretrain-data download <repo_id> <local_dir>`.
+### 2. Mix / Consolidate Data
 
-### 2. Consolidate Data
-
-Concatenate the downloaded files into a single parquet file (`data/concat_dataset/data.parquet`):
+Sample and mix the downloaded datasets into a single parquet file (`data/mixed_dataset/data.parquet`). Per-dataset row counts are set in the `DATASET_WEIGHTS` dict inside the script:
 
 ```bash
 python concat_data.py
@@ -145,7 +145,7 @@ Tokenize the parquet dataset into train/test splits using the `pretrain-data` CL
 ```bash
 uv run pretrain-data tokenize \
   --tokenizer-repo-id <tokenizer-id-or-path> \
-  --data-path data/concat_dataset/data.parquet \
+  --data-path data/mixed_dataset/data.parquet \
   --output-path tokenized_data/
 ```
 
@@ -156,14 +156,14 @@ Use `--test-size` to change the held-out fraction (default `0.1`).
 Pack tokenized sequences into fixed-length blocks for efficient training (eliminates padding waste):
 
 ```bash
-python pack_data.py --max_seq_length 2048 \
-  --input_dir tokenized_data/train \
-  --output_dir tokenized_data/packed_train_data_2048
+python pack_data.py --max-seq-length 2048 \
+  --input-dir tokenized_data/train \
+  --output-dir tokenized_data/packed_train_data_2048
 ```
 
 ### 5. Train
 
-Run training with your configuration:
+Run (continued-)pretraining with your configuration:
 
 ```bash
 # Single GPU
@@ -179,17 +179,65 @@ python main.py model=qwen_large optimizer.learning_rate=3e-4
 accelerate config
 ```
 
-### Distributed Training
+Helper scripts `train.sh` and `launch.sh` wrap `accelerate launch main.py` (setting `CUDA_VISIBLE_DEVICES` / activating the venv).
 
-To launch distributed training across multiple GPUs:
+#### Continued Pretraining from a Checkpoint
+
+Set `saved_checkpoint_path` to a checkpoint or pretrained model directory to continue training an existing model instead of building one from a preset:
+
+```bash
+python main.py \
+  saved_checkpoint_path=./checkpoints/my_experiment/my_run/last \
+  total_tokens=1_000_000_000
+```
+
+- Add a `lora` section to train a LoRA adapter on top of the frozen base (recommended for large-model CPT). With LoRA, only the adapter is saved into each checkpoint.
+- When resuming an **interrupted** run (a checkpoint that contains a `state/` directory), the full training state — global step, epoch, tokens seen, and dataloader position — is restored automatically so no samples are seen twice or skipped.
+- When using LoRA, set `compile: null`.
+
+#### Distributed Training
 
 ```bash
 # Launch on all available GPUs
 accelerate launch --multi_gpu main.py
 
-# Launch on specific number of GPUs
+# Launch on a specific number of GPUs
 accelerate launch --num_processes 4 main.py
 ```
+
+### 6. Merge Adapter (CPT → SFT bridge)
+
+CPT checkpoints trained with LoRA store only the adapter. Before SFT-ing from such a checkpoint, merge the adapter into its base to produce a standalone model directory:
+
+```bash
+python merge_adapter.py \
+  --adapter-path checkpoints/my_experiment/my_run/last \
+  --output-dir models/my_cpt_merged
+```
+
+The base model is read from the adapter's `adapter_config.json` unless `--base-model` is given explicitly. The merged directory (with tokenizer) can then be loaded by `sft.py` via `model_name_or_path`.
+
+### 7. Supervised Fine-Tuning (SFT)
+
+SFT is configured via `configs/sft.yaml` and run through TRL's `SFTTrainer`:
+
+```bash
+# Single GPU
+python sft.py
+
+# Multi-GPU with Accelerate
+accelerate launch sft.py
+```
+
+Key configuration:
+
+- `model_name_or_path`: the merged-CPT directory (or any base model) to fine-tune.
+- `dataset`: `dataset_id` (HF hub id or local `save_to_disk` dir), splits, and `dataset_format` — one of `conversational` (rows of `{"messages": [...]}`), `prompt_completion`, or `text`.
+- `chat_template_path`: a ChatML template with `{% generation %}` markers (`configs/lfm2_chatml_gen.jinja`) so **assistant-only loss** works on conversational data; set to `null` to keep the tokenizer's own template.
+- `sft`: knobs forwarded to `trl.SFTConfig` (`output_dir`, `learning_rate`, `per_device_train_batch_size`, `max_length`, `assistant_only_loss`, `packing`, eval/save intervals, `bf16`, …).
+- `lora`: optional LoRA section for adapter-based SFT (omit for full-parameter).
+
+trackio logging is wired automatically through a custom callback (`pretrain.sft.task.TrackioCallback`) — no `report_to` setting is needed.
 
 ## Training Features
 
@@ -200,48 +248,51 @@ Training uses bfloat16 by default for faster computation and lower memory usage.
 Simulate larger batch sizes without OOM errors:
 ```yaml
 accelerate:
-  gradient_accumulation_steps: 4  # Effective batch size = data.batch_size * 4
+  gradient_accumulation_steps: 4  # Effective batch size = data.train_batch_size * 4
 ```
 
 ### Learning Rate Warmup
-Linear warmup scheduler for stable training start:
+Linear warmup scheduler for a stable training start:
 ```yaml
 scheduler:
-  warmup_steps: 500
+  warmup_steps: 1000
 ```
 
 ### Periodic Validation
 Automatic validation runs during training:
 ```yaml
 validation:
-  val_check_interval: 1000  # Run validation every 1000 steps
+  val_check_interval: 4000  # Run validation every 4000 steps
 ```
 
 ### Dataset Packing
 Combines multiple examples into fixed-length sequences to achieve near 100% token utilization (no padding waste). Enable with `use_packed_data: true`.
 
-### LoRA / PEFT Fine-Tuning
-Add a `lora` section to the config to train a LoRA adapter (via HuggingFace `peft`) instead of full-parameter training. When `lora` is absent (the default), training is full-parameter.
+### LoRA / PEFT
+Add a `lora` section to train a LoRA adapter (via HuggingFace `peft`) instead of full-parameter training, for both continued pretraining (`train.yaml`) and SFT (`sft.yaml`). When `lora` is absent (the default), training is full-parameter.
 
 ```yaml
 lora:
-  r: 16
+  r: 32
   lora_alpha: 32
   lora_dropout: 0.05
   target_modules: ["q_proj", "v_proj"]   # default; null lets peft auto-infer instead
 ```
 
-Only the adapter is trained (the base model is frozen), and each checkpoint stores the adapter **separately** — `adapter_config.json` + `adapter_model.safetensors`, not a full model copy. The base model is taken from `saved_checkpoint_path`. When using LoRA it's recommended to set `compile: null`.
+For CPT, only the adapter is trained (the base is frozen) and each checkpoint stores the adapter **separately** — `adapter_config.json` + `adapter_model.safetensors`, not a full model copy. The base model is taken from `saved_checkpoint_path`. When using LoRA it's recommended to set `compile: null`.
+
+### Crash-Safe Resume
+When a run is interrupted, resuming from a checkpoint that contains a `state/` directory restores the full training state (step, epoch, tokens seen) and the dataloader position, so training continues exactly where it left off.
 
 ### Checkpoint Management
-Automatically saves the top-K best checkpoints based on validation loss. Older/worse checkpoints are removed to save disk space.
+Automatically saves the top-K best checkpoints based on validation loss (older/worse ones are pruned), plus a fixed `last/` checkpoint when `save_last: true`. Checkpoints are organized as `checkpoints/<experiment_name>/<run_name>/...`.
 
 ### GPU Monitoring
 Automatic GPU utilization, memory, and power logging via trackio.
 
 ## Evaluation
 
-The framework includes built-in evaluation benchmarks, configurable in the YAML config:
+The framework includes built-in evaluation benchmarks, configurable in the training YAML config (`evaluation` section, `enabled` master switch off by default):
 
 - **HumanEval**: Code generation benchmark
 - **IFEVAL**: Instruction-following evaluation
@@ -251,7 +302,7 @@ Each benchmark supports configurable sample count, temperature, and max generati
 
 ## Monitoring
 
-Training metrics are logged using [trackio](https://github.com/alexanderthebaptist/trackio), which provides:
+Training metrics are logged using [trackio](https://github.com/gradio-app/trackio), which provides:
 - Training loss, learning rate, tokens processed
 - Validation loss at regular intervals
 - GPU utilization, memory usage, and power consumption
@@ -264,6 +315,13 @@ Metrics logged:
 - `tokens_passed`: Total tokens processed
 - GPU metrics (when `auto_log_gpu: true`)
 
+To open a **write-enabled** dashboard (so you can delete/rename runs from the browser):
+
+```bash
+uv run dashboard.py               # all projects
+uv run dashboard.py <project>     # open a specific project
+```
+
 ## Data Format
 
 The project expects tokenized datasets in HuggingFace Datasets format with:
@@ -273,7 +331,22 @@ The project expects tokenized datasets in HuggingFace Datasets format with:
 
 ## Optimization Details
 
-- **Optimizer**: AdamW with beta=(0.9, 0.95), weight_decay=0.1, eps=1e-10
-- **Scheduler**: Linear warmup
+Defaults are config-driven; the values below reflect the current `configs/train.yaml`:
+
+- **Optimizer**: AdamW with betas=(0.9, 0.95), weight_decay=0.01, eps=1e-10
+- **Scheduler**: Linear warmup (`scheduler.warmup_steps`)
 - **Gradient Clipping**: Max norm of 1.0
 - **Sequence Length**: Configurable via `data.max_seq_length` (default 2048)
+
+## Requirements
+
+- Python **>= 3.12**
+- Managed with [`uv`](https://github.com/astral-sh/uv) (`uv.lock` committed). Key dependencies: `accelerate`, `transformers`, `trl`, `peft`, `datasets`, `hydra-core`, `trackio`, `polars`.
+
+## Testing
+
+```bash
+uv run pytest
+```
+
+The test suite (under `tests/`) is CPU-only and focused on the crash-resume correctness logic — training-state round-trips and deterministic dataloader skip-on-resume.

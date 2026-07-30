@@ -10,16 +10,16 @@ hydra:
 
 # Where SFT starts from: a merged-CPT dir or the raw base. tokenizer_path
 # defaults to model_name_or_path when null.
-model_name_or_path: "./models/lfm2_5_base_plus_adapter_plus_delta_v5_10b_r64"
+model_name_or_path: "./models/lfm2_5_big_base_plus_adapter_plus_delta_v2_1b_r32"
 tokenizer_path: null
 
 # Chat-template override with {% generation %} markers so assistant-only loss
 # works on conversational data (the shipped LFM2 template has no markers). Set
 # to null to keep the tokenizer's own template.
-chat_template_path: "./configs/lfm2_chatml_gen.jinja"
+chat_template_path: "./configs/lfm2_5_big_it_chat_template.jinja"
 
 attn_implementation: "kernels-community/flash-attn2"
-run_name: "base_plus_adapter_r64_a64_v5_sft_r32_a32"   # trackio run name; null -> timestamped "sft-<date>"
+run_name: "lfm2_5_big_base_plus_adapter_plus_delta_v2_1b_r32_sft_r32_a32_lr1en5"   # trackio run name; null -> timestamped "sft-<date>"
 
 # LoRA adapter (optional). Omit or set to null for full-parameter SFT.
 lora:
@@ -41,16 +41,15 @@ dataset:
 
 # SFT / TrainingArguments knobs (forwarded to trl.SFTConfig)
 sft:
-  output_dir: "checkpoints/lfm2_5_base_plus_adapter_r64_a64_v5_sft_r32_a32"
+  output_dir: "checkpoints/lfm2_5_big_base_plus_adapter_plus_delta_v2_1b_r32_sft_r32_a32_lr1en5"
   num_train_epochs: 1.0
   max_steps: -1                 # set > 0 for quick smoke tests
   per_device_train_batch_size: 16
   per_device_eval_batch_size: 16
   gradient_accumulation_steps: 1
-  learning_rate: 2e-5
+  learning_rate: 1e-5
   lr_scheduler_type: "constant_with_warmup"   # linear warmup, then flat at learning_rate
-  warmup_ratio: 0.1                            # fraction of total steps spent warming up
-  warmup_steps: 0
+  warmup_ratio: 0.1
   max_grad_norm: 1.0
   weight_decay: 0.0
   max_length: 2048
@@ -62,7 +61,7 @@ sft:
   bf16: true
   gradient_checkpointing: false
   logging_steps: 10
-  save_steps: 500
+  save_steps: 1000
   save_total_limit: 1
   eval_strategy: "steps"           # "steps" when eval_split is set
   eval_steps: 500
@@ -71,6 +70,6 @@ sft:
 
 # Logging (trackio)
 logging:
-  project_name: "lfm2_5_sft"
+  project_name: "lfm2_5_big_sft"
   auto_log_gpu: true
   log_every_n: 10

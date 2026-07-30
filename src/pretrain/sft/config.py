@@ -61,8 +61,12 @@ class SFTArgsConfig(BaseModel):
     gradient_accumulation_steps: int = 1
     learning_rate: float = 2e-5
     lr_scheduler_type: str = "cosine"
-    warmup_ratio: float = 0.03
-    warmup_steps: int = 0
+    # transformers 5.x: warmup_ratio is deprecated and, when not None, OVERWRITES
+    # warmup_steps in TrainingArguments.__post_init__. Keep it None so warmup_steps
+    # is honored. warmup_steps alone covers both modes: >=1 = absolute step count,
+    # <1 = fraction of total steps.
+    warmup_ratio: float | None = None
+    warmup_steps: float = 0
     max_grad_norm: float = 1.0
     weight_decay: float = 0.0
 
