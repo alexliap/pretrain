@@ -13,6 +13,7 @@ hydra:
 saved_checkpoint_path: "./checkpoints/lfm2_5_big_base_r32_a32/v4_5b_r32_a32/last"
 compile: "torch"
 num_epochs: 1
+attn_implementation: "flash_attn2"
 total_steps: 100
 total_tokens: 10_000_000_000
 
@@ -57,7 +58,7 @@ accelerate:
 # Validation
 validation:
   val_check_interval: 8000
-  val_size: 80_000
+  val_size: null
 
 # Logging
 logging:
