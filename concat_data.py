@@ -52,14 +52,6 @@ def _chunks(
     shards must serve several shards from the same file, so their filtered stream
     is sliced by row instead -- those sources are small (under 4 GB), so the
     repeated scan costs little.
-
-    The stride (``files[i::n]``) rather than contiguous blocks
-    (``files[i*k:(i+1)*k]``) is load-bearing. These sources are ordered -- by
-    CommonCrawl dump -- and cc_greek's duplicate rate varies hugely along that
-    order: contiguous groups differ 10.5x in how many rows survive dedup
-    (134k to 1.4m), so half of them cannot meet an equal per-shard quota and the
-    mix comes out short. Dealing files round-robin spreads the variation across
-    every shard instead, cutting the spread to 1.2x.
     """
     files = downloaded_files(source)
     per_shard = target_rows // n_shards

@@ -18,9 +18,6 @@ Four modes:
     # a sized subset, e.g. as written by measure_token_rates.py
     python download_data.py --plan data/download_plan.json
 
-    # one source
-    python download_data.py --source cc_greek --n-files 191
-
 All modes are incremental: shards already on disk are skipped, so a plan can be
 topped up to --full later without re-fetching anything.
 
@@ -30,6 +27,7 @@ Files land under ``data/raw/<source>/``, which ``concat_data.py`` reads.
 import argparse
 import json
 import logging
+import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -46,6 +44,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 RAW_DIR = Path("data/raw")
+
+# The Greek CommonCrawl source sits in a private repo, so its id is read from the
+# environment instead of being written here. Set CC_GREEK_REPO (and HF_TOKEN) in
+# .env. Only downloading needs it: the later stages read data/raw/cc_greek/ off
+# the local disk and work with it unset.
+CC_GREEK_REPO = os.environ.get("CC_GREEK_REPO", "")
 
 # Source manifest. `prefix` selects this source's shards out of the repo file
 # listing; `lang` drives the 50/50 English/Greek token split; `probe_files` is
@@ -74,7 +78,7 @@ SOURCES: dict[str, dict] = {
         "probe_files": None,
     },
     "cc_greek": {
-        "repo_id": "KIEFERSA/cc-greek-ds",
+        "repo_id": CC_GREEK_REPO,
         "prefix": "data/",
         "lang": "el",
         "probe_files": None,
@@ -114,6 +118,12 @@ def list_shards(source: str) -> list[str]:
     Sorting is what makes "the first N shards" a stable, reproducible selection.
     """
     spec = SOURCES[source]
+    if not spec["repo_id"]:
+        raise ValueError(
+            f"Source '{source}' has no repo id configured. Set CC_GREEK_REPO in "
+            ".env to download it (already-downloaded shards under data/raw/ are "
+            "usable without it)."
+        )
     files = HfApi().list_repo_files(spec["repo_id"], repo_type="dataset")
     return sorted(
         f

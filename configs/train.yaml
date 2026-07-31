@@ -10,35 +10,28 @@ hydra:
     dir: .
 
 # Run-level (top-level) settings
-saved_checkpoint_path: "./checkpoints/lfm2_5_big_base_r32_a32/v4_5b_r32_a32/last"
+# From scratch: no base checkpoint, and no LoRA (a `lora:` block here would train
+# an adapter over a base this run does not have). The stopping criterion is
+# total_tokens, which takes precedence over total_steps and num_epochs.
+saved_checkpoint_path: null
 compile: "torch"
 num_epochs: 1
-attn_implementation: "flash_attn2"
-total_steps: 100
-total_tokens: 10_000_000_000
-
-# LoRA adapter (optional). Omit or set to null for full-parameter training.
-# When set, the model is wrapped with a LoRA adapter and only the adapter is
-# saved into each checkpoint (the base comes from saved_checkpoint_path).
-# Recommended to set `compile: null` when using LoRA.
-lora:
-  r: 32
-  lora_alpha: 32
-  lora_dropout: 0.05
-  target_modules: ["q_proj", "v_proj"]   # null lets peft auto-infer instead
+attn_implementation: "flash_attention_2"
+total_steps: null
+total_tokens: 10_000_000
 
 # Data
 data:
-  tokenizer_path: "./models/lfm2_5_big_base/"
+  tokenizer_path: "./models/bilingual_el_en_50k/"
   max_seq_length: 2048
   use_packed_data: true
-  num_workers: 4
-  train_batch_size: 8
-  val_batch_size: 8
+  num_workers: 16
+  train_batch_size: 16
+  val_batch_size: 16
 
 # Optimizer
 optimizer:
-  learning_rate: 8e-5
+  learning_rate: 5e-4
   eps: 1e-10
   betas:
     - 0.9
@@ -48,7 +41,7 @@ optimizer:
 
 # Scheduler
 scheduler:
-  warmup_steps: 1000
+  warmup_steps: 2000
 
 # Accelerate
 accelerate:
@@ -57,12 +50,12 @@ accelerate:
 
 # Validation
 validation:
-  val_check_interval: 8000
+  val_check_interval: 1000
   val_size: null
 
 # Logging
 logging:
-  project_name: "lfm2_5_big_base_lora_cpt_gr"
+  project_name: "llama_120m_pretraining"
   auto_log_gpu: true
   log_every_n: 10
 
@@ -72,10 +65,10 @@ checkpoint:
   # Subdir name under save_dir. Falls back to model.name when null. Set this when
   # resuming from saved_checkpoint_path so the run dir isn't named after an unused
   # model config (e.g. qwen_small).
-  experiment_name: "lfm2_5_big_base_r32_a32"
-  run_name: "v5_10b_r32_a32"
-  save_top_k: 1
-  save_every_n_steps: 8000
+  experiment_name: "llama_120m_pretraining_v1"
+  run_name: "llama_120m_pretraining_v1"
+  save_top_k: 3
+  save_every_n_steps: 1000
   save_last: true
   max_shard_size: "5GB"
 

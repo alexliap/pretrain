@@ -40,7 +40,7 @@ OUT_DIR = Path("data")
 
 # Shards sampled per source, and documents per sampled shard. Spread across the
 # shard list rather than taken from the front: these sources are ordered (by
-# CommonCrawl dump for fineweb-edu/cc-greek), so the head is not representative.
+# CommonCrawl dump, for the web-crawl sources), so the head is not representative.
 SAMPLE_SHARDS = 10
 SAMPLE_DOCS = 10_000
 
@@ -73,8 +73,7 @@ def _row_count(source: str) -> tuple[int, int]:
     """(rows, rows_after_filter) across a source's shards.
 
     Unfiltered counts come from parquet footers; filtered counts need the filter
-    columns read, which for cc_greek is one small integer column but for the
-    synth sources means scanning their text.
+    columns read.
     """
     files = downloaded_files(source)
     rows = pl.scan_parquet(files).select(pl.len()).collect().item()

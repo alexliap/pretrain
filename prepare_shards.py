@@ -30,7 +30,7 @@ from collections import defaultdict
 from pathlib import Path
 
 import pyarrow.parquet as pq
-from datasets import Dataset
+from datasets import Dataset, load_from_disk
 
 from pack_data import pack_dataset
 from pretrain.data.tokenize import (
@@ -56,7 +56,7 @@ NUM_PROC = 48
 # left unpacked and variable-length because ``val_dataloader`` builds an
 # attention mask from real sequence lengths -- packing them would make every
 # validation sequence a splice of unrelated documents.
-TEST_ROWS = 50_000
+TEST_ROWS = 500_000
 
 
 def shard_paths(mixed_dir: Path) -> list[Path]:
@@ -85,12 +85,22 @@ def _read_shard(path: Path, offset: int = 0, length: int | None = None) -> Datas
 
 def build_test_split(
     path: Path, tokenizer, output_dir: Path, test_rows: int, num_proc: int
-) -> None:
-    """Hold out the last `test_rows` documents of `path`, tokenized and unpacked."""
+) -> int:
+    """Hold out the last `test_rows` documents of `path`, tokenized and unpacked.
+
+    Returns how many rows are actually held out, which the caller must exclude
+    from training. When the split already exists the answer comes from the split
+    itself rather than from `test_rows`: otherwise changing the constant between
+    a run and its resume would silently drop rows from -- or duplicate rows into
+    -- the training store.
+    """
     test_dir = output_dir / "test"
     if (test_dir / "dataset_info.json").exists():
-        logger.info("test split already present at %s, skipping", test_dir)
-        return
+        held_out = len(load_from_disk(str(test_dir)))
+        logger.info(
+            "test split already present at %s (%d rows), skipping", test_dir, held_out
+        )
+        return held_out
 
     n_rows = pq.ParquetFile(path).metadata.num_rows
     dataset = _read_shard(path, offset=n_rows - test_rows, length=test_rows)
@@ -103,6 +113,7 @@ def build_test_split(
     logger.info(
         "test split: %d documents, %d tokens -> %s", len(tokenized), n_tokens, test_dir
     )
+    return len(tokenized)
 
 
 def prepare_shard(
@@ -270,14 +281,14 @@ def main() -> None:
     # The held-out documents come off the tail of the last shard, and that same
     # tail is excluded from training below.
     last_index = len(paths) - 1
-    build_test_split(
+    held_out = build_test_split(
         paths[last_index], tokenizer, args.output_dir, args.test_rows, args.num_proc
     )
 
     for index, path in selected:
         row_limit = args.row_limit
         if index == last_index and row_limit is None:
-            row_limit = pq.ParquetFile(path).metadata.num_rows - args.test_rows
+            row_limit = pq.ParquetFile(path).metadata.num_rows - held_out
         prepare_shard(
             path,
             index,
