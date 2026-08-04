@@ -11,35 +11,11 @@ A lightweight language model **pretraining / continued-pretraining / supervised 
 - **Supervised Fine-Tuning (SFT)**: TRL-based SFT with conversational data and assistant-only loss
 - **LoRA / PEFT**: Train adapters instead of full parameters for both CPT and SFT (via `peft`)
 - **Adapter Merging**: Merge a trained LoRA adapter back into its base model to bridge CPT → SFT
-- **Mixed Precision Training**: Built-in bf16 support for faster training
-- **Gradient Accumulation**: Efficient training with large effective batch sizes
-- **Dataset Packing**: Efficient sequence packing to maximize token utilization
-- **Crash-Safe Resume**: Full training-state checkpointing (step/epoch/tokens seen + dataloader position)
 - **Token-Budget Stopping**: Stop training after a target number of tokens (`total_tokens`)
 - **Automatic Logging**: GPU metrics and training stats via trackio, plus a write-enabled dashboard
 - **Custom Tokenizers**: Support for custom tokenizer training and usage
-- **Checkpoint Management**: Top-K checkpoint saving based on validation loss (plus a fixed `last/`)
-- **Evaluation Benchmarks**: Built-in support for HumanEval, IFEVAL, and MMLU
 
-## Model Architecture
-
-The framework supports two ways of obtaining a model, and is **architecture-agnostic** on the load path:
-
-### From scratch (Qwen3 presets)
-
-When no `saved_checkpoint_path` is given, the model is built from a size preset under `configs/model/`. These presets currently target the **Qwen3** architecture:
-
-| Preset | Layers | Hidden Size | FFN Size | Head Dim | Heads |
-|--------|--------|-------------|----------|----------|-------|
-| `qwen_tiny` | 4 | 768 | 1024 | 64 | 4 |
-| `qwen_small` | 8 | 768 | 1024 | 64 | 8 |
-| `qwen_medium` | 15 | 768 | 1024 | 64 | 8 |
-| `qwen_large` | 20 | 768 | 1024 | 128 | 8 |
-| `qwen_xlarge` | 20 | 768 | 1024 | 64 | 8 |
-
-All presets use `Qwen/Qwen3-0.6B` as the base model config reference and support customizable vocabulary size via custom tokenizers.
-
-### From a checkpoint or pretrained directory (any HF causal LM)
+## From a checkpoint or pretrained directory (any HF causal LM)
 
 When `saved_checkpoint_path` (training) or `model_name_or_path` (SFT) points at a checkpoint or a saved model directory, the model is loaded via `AutoConfig`/`AutoModelForCausalLM`, so **any HuggingFace causal-LM architecture works** — the size presets are bypassed.
 
