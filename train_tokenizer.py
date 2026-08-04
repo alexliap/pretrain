@@ -52,7 +52,7 @@ CORPUS_WEIGHTS = {
     "synth_math": 0.05,
     "synth_faq": 0.05,
     "synth_table": 0.03,
-    "synth_turotial": 0.02,
+    "synth_tutorial": 0.02,
 }
 
 
