@@ -26,7 +26,6 @@ from pathlib import Path
 import polars as pl
 from transformers import AutoTokenizer
 
-from data_filters import filter_columns, source_filter
 from download_data import SOURCES, downloaded_files
 
 logging.basicConfig(
@@ -42,11 +41,7 @@ OUT_DIR = Path("data")
 # shard list rather than taken from the front: these sources are ordered (by
 # CommonCrawl dump, for the web-crawl sources), so the head is not representative.
 SAMPLE_SHARDS = 10
-SAMPLE_DOCS = 10_000
-
-# Greek synthetic data carries generation artifacts (foreign-script characters
-# spliced into Greek words), so its share of the Greek half is capped.
-SYNTH_CAP = 0.15
+SAMPLE_DOCS = 20_000
 
 
 def _sample_docs(source: str) -> list[str]:
@@ -55,22 +50,17 @@ def _sample_docs(source: str) -> list[str]:
     if not files:
         raise FileNotFoundError(f"No parquet files for '{source}'.")
 
-    predicate = source_filter(source)
-    columns = ["text"] + filter_columns(source)
-
     n_picks = min(SAMPLE_SHARDS, len(files))
     picks = {int(i * len(files) / n_picks) for i in range(n_picks)}
     docs: list[str] = []
     for i in sorted(picks):
-        frame = pl.scan_parquet(files[i]).select(columns).head(SAMPLE_DOCS * 4)
-        if predicate is not None:
-            frame = frame.filter(predicate)
+        frame = pl.scan_parquet(files[i]).select(["text"]).head(SAMPLE_DOCS * 4)
         docs.extend(t for t in frame.head(SAMPLE_DOCS).collect()["text"] if t)
     return docs
 
 
 def _row_count(source: str) -> tuple[int, int]:
-    """(rows, rows_after_filter) across a source's shards.
+    """rows across a source's shards.
 
     Unfiltered counts come from parquet footers; filtered counts need the filter
     columns read.
@@ -78,29 +68,16 @@ def _row_count(source: str) -> tuple[int, int]:
     files = downloaded_files(source)
     rows = pl.scan_parquet(files).select(pl.len()).collect().item()
 
-    predicate = source_filter(source)
-    if predicate is None:
-        return rows, rows
-
-    kept = (
-        pl.scan_parquet(files)
-        .select(filter_columns(source) or ["text"])
-        .filter(predicate)
-        .select(pl.len())
-        .collect()
-        .item()
-    )
-    return rows, kept
+    return rows
 
 
 def measure(tokenizer) -> dict[str, dict]:
     rates: dict[str, dict] = {}
     logger.info(
-        "%-16s %5s %10s %7s %9s %8s %10s",
+        "%-16s %5s %10s %7s %9s %10s",
         "source",
         "lang",
-        "kept_rows",
-        "kept",
+        "rows",
         "B/token",
         "tok/row",
         "pool_tokens",
@@ -111,32 +88,27 @@ def measure(tokenizer) -> dict[str, dict]:
         n_tokens = sum(
             len(ids) for ids in tokenizer(docs, add_special_tokens=False).input_ids
         )
-        rows, kept_rows = _row_count(source)
+        rows = _row_count(source)
 
         bytes_per_token = n_bytes / n_tokens
         # +2 for the bos/eos the post-processor adds to every document, which are
         # real tokens in the packed stream and must be budgeted for.
         tokens_per_row = n_tokens / len(docs) + 2
-        # Pool is sized on rows that survive the filter, since those are the only
-        # ones the mixing stage can draw on.
-        pool = int(tokens_per_row * kept_rows)
+        pool = int(tokens_per_row * rows)
 
         rates[source] = {
             "lang": SOURCES[source]["lang"],
             "rows": rows,
-            "kept_rows": kept_rows,
-            "kept_fraction": round(kept_rows / rows, 4) if rows else 0,
             "bytes_per_token": round(bytes_per_token, 3),
             "tokens_per_row": round(tokens_per_row, 1),
             "pool_tokens": pool,
             "sampled_docs": len(docs),
         }
         logger.info(
-            "%-16s %5s %10d %6.0f%% %9.2f %8.0f %10s",
+            "%-16s %5s %10d %7.2f %9.2f %10s",
             source,
             SOURCES[source]["lang"],
-            kept_rows,
-            100 * kept_rows / rows if rows else 0,
+            rows,
             bytes_per_token,
             tokens_per_row,
             f"{pool / 1e9:.2f}B",
@@ -144,16 +116,14 @@ def measure(tokenizer) -> dict[str, dict]:
     return rates
 
 
-def plan_mix(
-    rates: dict[str, dict], budget: float, en_share: float, synth_cap: float
-) -> dict[str, dict]:
+def plan_mix(rates: dict[str, dict], budget: float, en_share: float) -> dict[str, dict]:
     """Allocate the token budget across sources, then convert to row counts.
 
     Greek is allocated by priority rather than proportionally: the curated
-    sources and the capped synthetic set are taken in full first, and cc_greek --
-    the only source deep enough to absorb whatever is left -- fills the
-    remainder. That keeps the highest-quality Greek text at 100% inclusion
-    instead of subsampling it to hit a ratio.
+    sources (including synthetic) are taken in full first, and cc_greek -- the
+    only source deep enough to absorb whatever is left -- fills the remainder.
+    That keeps the highest-quality Greek text at 100% inclusion instead of
+    subsampling it to hit a ratio.
     """
     en_target = int(budget * en_share)
     el_target = int(budget - en_target)
@@ -172,8 +142,9 @@ def plan_mix(
     for source in en_sources:
         alloc[source] = min(en_target, rates[source]["pool_tokens"])
 
-    # Greek. Curated sources go in whole, synth is reserved at its cap, and
-    # cc_greek absorbs the rest.
+    # Greek. Curated sources go in whole, synth splits whatever's left over its
+    # four configs proportionally (so none dominates), and cc_greek absorbs
+    # anything still left after that.
     curated_total = 0
     for source in curated_el:
         take = min(rates[source]["pool_tokens"], el_target - curated_total)
@@ -181,29 +152,15 @@ def plan_mix(
         curated_total += take
 
     synth_pool = sum(rates[s]["pool_tokens"] for s in synth)
-    synth_budget = min(int(el_target * synth_cap), synth_pool)
-
-    cc_pool = rates["cc_greek"]["pool_tokens"] if "cc_greek" in rates else 0
-    cc_take = max(0, min(cc_pool, el_target - curated_total - synth_budget))
-    non_synth = curated_total + cc_take
-
-    # If the non-synthetic sources cannot reach el_target, let synth grow to take
-    # up the slack -- but the cap must bind against the total we actually reach,
-    # not the one we asked for. Solving EL = non_synth + cap*EL for EL gives
-    # EL = non_synth / (1 - cap); holding synth at cap*el_target instead would
-    # push its realised share above the cap.
-    if non_synth + synth_budget < el_target:
-        reachable_el = min(non_synth / (1 - synth_cap), non_synth + synth_pool)
-        synth_budget = min(int(reachable_el - non_synth), synth_pool)
-
-    if "cc_greek" in rates:
-        alloc["cc_greek"] = cc_take
-
+    synth_budget = min(el_target - curated_total, synth_pool)
     for source in synth:
-        # Split the synth budget across its four configs in proportion to what
-        # each can supply, so no single config dominates.
         share = rates[source]["pool_tokens"] / synth_pool if synth_pool else 0
         alloc[source] = min(rates[source]["pool_tokens"], int(synth_budget * share))
+
+    non_synth = curated_total + sum(alloc[s] for s in synth)
+    if "cc_greek" in rates:
+        cc_pool = rates["cc_greek"]["pool_tokens"]
+        alloc["cc_greek"] = max(0, min(cc_pool, el_target - non_synth))
 
     remaining = el_target - sum(
         tokens for s, tokens in alloc.items() if rates[s]["lang"] == "el"
@@ -222,11 +179,11 @@ def plan_mix(
             else 0,
         }
 
-    _report_plan(plan, budget, en_target, el_target, remaining, synth_cap)
+    _report_plan(plan, budget, en_target, el_target, remaining)
     return plan
 
 
-def _report_plan(plan, budget, en_target, el_target, shortfall, synth_cap) -> None:
+def _report_plan(plan, budget, en_target, el_target, shortfall) -> None:
     logger.info("")
     logger.info(
         "MIX PLAN  budget %.1fB tokens (%.0f%% EN / %.0f%% EL)",
@@ -254,12 +211,11 @@ def _report_plan(plan, budget, en_target, el_target, shortfall, synth_cap) -> No
         e["target_tokens"] for s, e in plan.items() if s.startswith("synth_")
     )
     logger.info(
-        "TOTAL %.2fB tokens -- %.1f%% EN / %.1f%% EL, synth %.1f%% of Greek (cap %.0f%%)",
+        "TOTAL %.2fB tokens -- %.1f%% EN / %.1f%% EL, synth %.1f%% of Greek",
         total / 1e9,
         100 * got_en / total,
         100 * got_el / total,
         100 * got_synth / got_el if got_el else 0,
-        synth_cap * 100,
     )
 
     # Tolerate the integer-rounding residue left by the per-source allocations;
@@ -267,7 +223,7 @@ def _report_plan(plan, budget, en_target, el_target, shortfall, synth_cap) -> No
     if shortfall > 0.005 * el_target:
         logger.warning(
             "Greek is %.2fB tokens SHORT of its %.2fB target -- the Greek pool is "
-            "exhausted. Lower --budget, lower --en-share, or raise --synth-cap.",
+            "exhausted. Lower --budget or --en-share.",
             shortfall / 1e9,
             el_target / 1e9,
         )
@@ -281,18 +237,11 @@ def main() -> None:
     parser.add_argument(
         "--budget",
         type=float,
-        default=30e9,
-        help="Target corpus size in tokens. 30B keeps cc_greek at ~80%% of its "
-        "post-dedup pool, so measurement drift cannot cause a shortfall.",
+        default=10e9,
+        help="Target corpus size in tokens.",
     )
     parser.add_argument(
         "--en-share", type=float, default=0.5, help="English fraction of the budget."
-    )
-    parser.add_argument(
-        "--synth-cap",
-        type=float,
-        default=SYNTH_CAP,
-        help="Maximum synthetic-Greek share of the Greek half.",
     )
     args = parser.parse_args()
 
@@ -314,20 +263,12 @@ def main() -> None:
         (en_pool + el_pool) / 1e9,
     )
 
-    # The synth cap binds against the Greek total, so the achievable Greek total
-    # is not simply the sum of the pools: solving EL = other + min(synth, cap*EL)
-    # gives EL = other/(1-cap) while the cap is the binding term.
-    synth_pool = sum(v["pool_tokens"] for s, v in rates.items() if s.startswith("synth_"))
-    other_el = el_pool - synth_pool
-    el_max = min(other_el / (1 - args.synth_cap), other_el + synth_pool)
-    budget_max = min(el_max / (1 - args.en_share), en_pool / args.en_share)
+    budget_max = min(el_pool / (1 - args.en_share), en_pool / args.en_share)
     logger.info(
-        "Largest feasible corpus at %.0f%% EN and a %.0f%% synth cap: %.1fB tokens "
-        "(Greek tops out at %.1fB)",
+        "Largest feasible corpus at %.0f%% EN: %.1fB tokens (Greek tops out at %.1fB)",
         args.en_share * 100,
-        args.synth_cap * 100,
         budget_max / 1e9,
-        el_max / 1e9,
+        el_pool / 1e9,
     )
     if args.budget > budget_max:
         logger.warning(
@@ -337,7 +278,7 @@ def main() -> None:
             budget_max / 1e9,
         )
 
-    plan = plan_mix(rates, args.budget, args.en_share, args.synth_cap)
+    plan = plan_mix(rates, args.budget, args.en_share)
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     (OUT_DIR / "token_rates.json").write_text(json.dumps(rates, indent=2))
@@ -347,7 +288,6 @@ def main() -> None:
                 "config": {
                     "budget": args.budget,
                     "en_share": args.en_share,
-                    "synth_cap": args.synth_cap,
                     "tokenizer": args.tokenizer_path,
                 },
                 "sources": plan,
