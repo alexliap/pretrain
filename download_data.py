@@ -27,7 +27,6 @@ Files land under ``data/raw/<source>/``, which ``concat_data.py`` reads.
 import argparse
 import json
 import logging
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -45,25 +44,18 @@ logger = logging.getLogger(__name__)
 
 RAW_DIR = Path("data/raw")
 
-# The Greek CommonCrawl source sits in a private repo, so its id is read from the
-# environment instead of being written here. Set CC_GREEK_REPO (and HF_TOKEN) in
-# .env. Only downloading needs it: the later stages read data/raw/cc_greek/ off
-# the local disk and work with it unset.
-CC_GREEK_REPO = os.environ.get("CC_GREEK_REPO", "")
-
 # Source manifest. `prefix` selects this source's shards out of the repo file
 # listing; `lang` drives the 50/50 English/Greek token split; `probe_files` is
 # how many shards the --probe stage pulls (None = all of them).
 #
 # Deliberately absent:
 #   high-quality-gr-text/finepdfs_el  -- OCR'd PDFs, noisy
-#   high-quality-gr-text/wikipedia_el -- near-duplicate of finewiki_el
 SOURCES: dict[str, dict] = {
     "fineweb_edu": {
         "repo_id": "HuggingFaceFW/fineweb-edu",
-        "prefix": "sample/100BT/",
+        "prefix": "sample/10BT/",
         "lang": "en",
-        "probe_files": 2,
+        "probe_files": None,
     },
     "fineweb_hq_el": {
         "repo_id": "alexliap/high-quality-gr-text",
@@ -77,9 +69,9 @@ SOURCES: dict[str, dict] = {
         "lang": "el",
         "probe_files": None,
     },
-    "cc_greek": {
-        "repo_id": CC_GREEK_REPO,
-        "prefix": "data/",
+    "wikipedia_el": {
+        "repo_id": "alexliap/high-quality-gr-text",
+        "prefix": "wikipedia_el/",
         "lang": "el",
         "probe_files": None,
     },
@@ -126,9 +118,7 @@ def list_shards(source: str) -> list[str]:
         )
     files = HfApi().list_repo_files(spec["repo_id"], repo_type="dataset")
     return sorted(
-        f
-        for f in files
-        if f.startswith(spec["prefix"]) and f.endswith(".parquet")
+        f for f in files if f.startswith(spec["prefix"]) and f.endswith(".parquet")
     )
 
 

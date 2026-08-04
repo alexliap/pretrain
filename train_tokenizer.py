@@ -37,9 +37,8 @@ OUTPUT_DIR = "models/bilingual_el_en_50k"
 
 # BPE quality saturates well before the full corpus; what matters is that the
 # sample is balanced across languages and sources, not that it is large.
-SAMPLE_GB = 4.0
+SAMPLE_GB = 20.0
 BATCH_SIZE = 1000
-PROBE_ROWS = 1000
 # Rows pulled per read while filling a source's byte budget.
 CHUNK_ROWS = 50_000
 
@@ -48,8 +47,12 @@ CHUNK_ROWS = 50_000
 CORPUS_WEIGHTS = {
     "fineweb_edu": 0.50,
     "fineweb_hq_el": 0.25,
-    "cc_greek": 0.20,
     "finewiki_el": 0.05,
+    "wikipedia_el": 0.05,
+    "synth_math": 0.05,
+    "synth_faq": 0.05,
+    "synth_table": 0.03,
+    "synth_turotial": 0.02,
 }
 
 

@@ -26,7 +26,6 @@ from pathlib import Path
 
 import polars as pl
 
-from data_filters import filter_columns, source_filter
 from download_data import downloaded_files
 
 logging.basicConfig(
@@ -66,11 +65,7 @@ def _read_chunk(
     source: str, files: list[Path], offset: int, limit: int
 ) -> pl.DataFrame:
     """Filtered ``(text, dataset)`` rows for one source within one shard."""
-    frame = pl.scan_parquet(files).select(["text"] + filter_columns(source))
-
-    predicate = source_filter(source)
-    if predicate is not None:
-        frame = frame.filter(predicate)
+    frame = pl.scan_parquet(files).select(["text"])
 
     # Empty and null documents would survive tokenisation as a bare bos/eos pair
     # and dilute the mix with sequences carrying no text.
@@ -100,9 +95,7 @@ def build_shards(plan: dict[str, dict], n_shards: int, out_dir: Path) -> dict:
     for source, entry in plan.items():
         if len(downloaded_files(source)) >= n_shards:
             continue
-        full = _read_chunk(
-            source, downloaded_files(source), 0, entry["target_rows"]
-        )
+        full = _read_chunk(source, downloaded_files(source), 0, entry["target_rows"])
         per_shard = -(-full.height // n_shards)  # ceil, so no rows are dropped
         cached[source] = [full.slice(i * per_shard, per_shard) for i in range(n_shards)]
         logger.info(
@@ -159,7 +152,12 @@ def _report(plan: dict, realised: dict, n_shards: int, out_dir: Path) -> dict:
     logger.info("")
     logger.info(
         "%-16s %5s %12s %12s %9s %8s",
-        "source", "lang", "rows", "planned", "text_GB", "share",
+        "source",
+        "lang",
+        "rows",
+        "planned",
+        "text_GB",
+        "share",
     )
     by_lang = {"en": 0.0, "el": 0.0}
     for source, entry in plan.items():
@@ -187,7 +185,9 @@ def _report(plan: dict, realised: dict, n_shards: int, out_dir: Path) -> dict:
     # Token shares use the plan's measured tokens/row, since the true count is
     # only known after tokenisation (tokenized_data/token_distribution.json).
     est_tokens = {
-        s: realised[s]["rows"] * plan[s]["target_tokens"] / max(1, plan[s]["target_rows"])
+        s: realised[s]["rows"]
+        * plan[s]["target_tokens"]
+        / max(1, plan[s]["target_rows"])
         for s in plan
     }
     for source, entry in plan.items():
