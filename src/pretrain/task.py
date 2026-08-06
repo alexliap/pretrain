@@ -40,6 +40,7 @@ class PretrainTask:
         self.accelerator = Accelerator(
             gradient_accumulation_steps=self.config.accelerate.gradient_accumulation_steps,
             mixed_precision=self.config.accelerate.mixed_precision,
+            step_scheduler_with_optimizer=False,
         )
 
     def _init_model_and_tokenizer(self) -> None:
