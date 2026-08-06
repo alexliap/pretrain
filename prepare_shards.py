@@ -50,7 +50,7 @@ MIXED_DIR = Path("data/mixed_dataset")
 OUTPUT_DIR = Path("tokenized_data")
 TOKENIZER_PATH = "models/bilingual_el_en_50k"
 MAX_SEQ_LENGTH = 2048
-NUM_PROC = 48
+NUM_PROC = 16
 
 # Rows held out for validation, taken from the tail of the last shard. They are
 # left unpacked and variable-length because ``val_dataloader`` builds an
@@ -166,7 +166,9 @@ def aggregate(packed_dir: Path, output_dir: Path, max_seq_length: int) -> None:
         per_shard[stats_path.parent.name] = json.loads(stats_path.read_text())
 
     if not per_shard:
-        logger.warning("No shard_stats.json under %s -- nothing to aggregate", packed_dir)
+        logger.warning(
+            "No shard_stats.json under %s -- nothing to aggregate", packed_dir
+        )
         return
 
     tokens_per_source: dict[str, int] = defaultdict(int)
@@ -212,7 +214,10 @@ def aggregate(packed_dir: Path, output_dir: Path, max_seq_length: int) -> None:
 
     logger.info("")
     logger.info(
-        "%-16s %14s %8s", "source", "tokens", "share",
+        "%-16s %14s %8s",
+        "source",
+        "tokens",
+        "share",
     )
     for source, n in sorted(tokens_per_source.items(), key=lambda kv: -kv[1]):
         logger.info("%-16s %14d %7.1f%%", source, n, 100 * n / total_tokens)

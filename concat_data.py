@@ -35,7 +35,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 SEED = 0
-N_SHARDS = 30
+N_SHARDS = 20
 PLAN_PATH = Path("data/mix_plan.json")
 OUT_DIR = Path("data/mixed_dataset")
 
