@@ -1,5 +1,5 @@
 defaults:
-  - model: qwen_small
+  - model: llama_80m
   - _self_
 
 hydra:
@@ -55,7 +55,7 @@ validation:
 
 # Logging
 logging:
-  project_name: "llama_140m_pretraining"
+  project_name: "llama_80m_pretraining"
   auto_log_gpu: true
   log_every_n: 10
 
@@ -65,8 +65,8 @@ checkpoint:
   # Subdir name under save_dir. Falls back to model.name when null. Set this when
   # resuming from saved_checkpoint_path so the run dir isn't named after an unused
   # model config (e.g. qwen_small).
-  experiment_name: "llama_140m_pretraining"
-  run_name: "llama_140m_pretraining_v1"
+  experiment_name: "llama_80m_pretraining"
+  run_name: "llama_80m_pretraining_v1"
   save_top_k: 3
   save_every_n_steps: 1000
   save_last: true
