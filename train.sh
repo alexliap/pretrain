@@ -1,1 +1,2 @@
+export NCCL_P2P_DISABLE=1
 uv run accelerate launch main.py

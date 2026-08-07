@@ -26,12 +26,12 @@ data:
   max_seq_length: 2048
   use_packed_data: true
   num_workers: 16
-  train_batch_size: 16
-  val_batch_size: 16
+  train_batch_size: 32
+  val_batch_size: 32
 
 # Optimizer
 optimizer:
-  learning_rate: 5e-4
+  learning_rate: 6e-4
   eps: 1e-10
   betas:
     - 0.9
