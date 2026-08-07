@@ -9,8 +9,8 @@
 #     checkpoints/llama_80m_pretraining/llama_80m_pretraining_v1/last \
 #     alexliap/llama_80m_pretraining
 #
-# Requires the `hf` CLI (huggingface_hub) and either a prior `hf auth login`
-# or an HF_TOKEN env var with write access.
+# Requires the `hf` CLI (huggingface_hub, via `uv run`) and either a prior
+# `hf auth login` or an HF_TOKEN env var with write access.
 
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
@@ -29,7 +29,7 @@ if [[ ! -d "${CHECKPOINT_DIR}" ]]; then
     exit 1
 fi
 
-hf upload "${REPO_ID}" "${CHECKPOINT_DIR}" . \
+uv run hf upload "${REPO_ID}" "${CHECKPOINT_DIR}" . \
     --repo-type model \
     --private \
     --revision "${REVISION}" \
