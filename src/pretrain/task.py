@@ -40,7 +40,6 @@ class PretrainTask:
         self.accelerator = Accelerator(
             gradient_accumulation_steps=self.config.accelerate.gradient_accumulation_steps,
             mixed_precision=self.config.accelerate.mixed_precision,
-            step_scheduler_with_optimizer=False,
         )
 
     def _init_model_and_tokenizer(self) -> None:
@@ -115,9 +114,7 @@ class PretrainTask:
             else:
                 config_source = config.saved_checkpoint_path
 
-            print(
-                f"Resuming: building model architecture from {config_source} ..."
-            )
+            print(f"Resuming: building model architecture from {config_source} ...")
             model_config = AutoConfig.from_pretrained(config_source)
             model = AutoModelForCausalLM.from_config(
                 model_config,
@@ -191,10 +188,14 @@ class PretrainTask:
             weight_decay=config.optimizer.weight_decay,
         )
 
+        # With the default step_scheduler_with_optimizer=True, Accelerate steps the
+        # underlying scheduler num_processes times per training-loop iteration, so
+        # total_iters is scaled by num_processes to keep warmup_steps meaning "this
+        # many training-loop iterations" regardless of world size.
         self.scheduler = LinearLR(
             optimizer=self.optimizer,
             start_factor=config.warmup_start_factor,
-            total_iters=config.scheduler.warmup_steps,
+            total_iters=config.scheduler.warmup_steps * self.accelerator.num_processes,
         )
 
     def _print_model_info(self) -> None:
