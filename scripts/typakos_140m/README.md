@@ -16,7 +16,9 @@ as `python scripts/typakos_140m/<script>.py`, not from inside this directory.
 - [Reproduce](#reproduce)
 - [Post-training](#post-training)
   - [SFT data pool](#sft-data-pool)
+  - [Merge and split](#merge-and-split)
   - [Chat template](#chat-template)
+  - [SFT config](#sft-config)
   - [Not done yet](#not-done-yet)
 
 ## Architecture
@@ -138,7 +140,9 @@ python scripts/typakos_140m/prepare_shards.py
 ## Post-training
 
 The steps below turn the base `typakos_model/` checkpoint into
-`typakos_sft_model/`: a token-bounded SFT data pool and a chat template with new special tokens. The SFT run itself (`trl.SFTTrainer` via the repo root's `sft.py`) hasn't happened yet.
+`typakos_sft_model/`: a token-bounded SFT data pool, a chat template with new
+special tokens, and a Hydra config for the run. The SFT run itself
+(`trl.SFTTrainer` via the repo root's `sft.py`) hasn't happened yet.
 
 ### SFT data pool
 
@@ -146,11 +150,12 @@ The steps below turn the base `typakos_model/` checkpoint into
 sources, keeps only well-formed conversations (an optional single leading
 `system` turn, then alternating `user`/`assistant` turns ending on
 `assistant`), and further keeps only those whose combined token count is
-<= 2048 (tokenized with `typakos_model`'s own tokenizer, `add_special_tokens=False`).
-Multi-turn conversations are kept whole as long as they fit that budget,
-turn count itself isn't restricted. Each source is saved separately under
-`data/sft_raw/<name>/` as a `datasets.Dataset` with `messages`/`num_tokens`/
-`num_turns`/`source` columns, not yet merged into one training-ready dataset:
+<= 2048 (tokenized with `typakos_sft_model`'s tokenizer, `add_special_tokens=False`,
+identical token counts to `typakos_model`'s since the chat-template special
+tokens it adds never appear in raw content). Multi-turn conversations are
+kept whole as long as they fit that budget, turn count itself isn't
+restricted. Each source is saved separately under `data/sft_raw/<name>/` as a
+`datasets.Dataset` with `messages`/`num_tokens`/`num_turns`/`source` columns:
 
 | source | raw | well-formed | final (<= 2048 tok) |
 |---|---:|---:|---:|
@@ -167,6 +172,28 @@ turn count itself isn't restricted. Each source is saved separately under
 
 ```bash
 python scripts/typakos_140m/prepare_sft_data.py
+```
+
+### Merge and split
+
+[`concat_sft_data.py`](concat_sft_data.py) concatenates the 7 pools above
+(same schema throughout, so no casting needed), shuffles the combined pool,
+and splits off 10% as validation:
+
+| split | rows |
+|---|---:|
+| train | 936,491 |
+| validation | 104,055 |
+
+Saved as a single `datasets.DatasetDict` to `data/sft_pool/`, the format
+`pretrain.sft.task.SFTTask._load_split` expects when `dataset_id` points at a
+local directory (`dataset_split: "train"`, `eval_split: "validation"`). Also
+pushed to the private Hub dataset repo
+[`alexliap/typakos_sft_dataset`](https://huggingface.co/datasets/alexliap/typakos_sft_dataset)
+(`DatasetDict.push_to_hub`, both splits).
+
+```bash
+python scripts/typakos_140m/concat_sft_data.py
 ```
 
 ### Chat template
@@ -193,7 +220,26 @@ python scripts/typakos_140m/add_chat_template.py
 [`alexliap/llama_140m_sft`](https://huggingface.co/alexliap/llama_140m_sft)
 via [`upload_checkpoint.sh`](../../upload_checkpoint.sh).
 
+### SFT config
+
+[`configs/sft.yaml`](configs/sft.yaml) points `trl.SFTTrainer` (via the repo
+root's `sft.py`) at `typakos_sft_model` and `data/sft_pool`, same pattern as
+[`configs/train.yaml`](configs/train.yaml): a directory-local snapshot rather
+than the root `configs/sft.yaml`, which is a different, unrelated experiment.
+Full-parameter SFT (no LoRA, `typakos_140m` is small enough not to need it),
+`dataset_format: "conversational"`, `assistant_only_loss: true`. No
+`chat_template_path` override needed, `typakos_sft_model`'s tokenizer already
+carries `chat_template.jinja`. The `sft:` block's batch size / epochs / eval
+cadence are untuned starting points, not a recovered or validated run like
+`train.yaml`.
+
+```bash
+./scripts/typakos_140m/sft.sh
+```
+
+`sft.sh` points Hydra at `configs/sft.yaml` in this directory (`-cp
+scripts/typakos_140m/configs -cn sft`), mirroring `train.sh`.
+
 ### Not done yet
 
-Merging the 7 SFT pools above into one training-ready dataset, and the
-actual SFT run, are still open.
+The actual SFT run.

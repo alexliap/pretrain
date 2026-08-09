@@ -23,6 +23,7 @@ dependencies = [
     "omegaconf>=2.3.0",
     "peft>=0.17",
     "polars>=1.37.1",
+    "pydantic>=2.0",
     "python-dotenv>=1.0.0",
     "tokenizers>=0.20.0",
     "torch==2.11.0",
