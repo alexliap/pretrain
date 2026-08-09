@@ -2,11 +2,17 @@ import heapq
 import os
 import shutil
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from accelerate import Accelerator
 from transformers import PreTrainedModel
 
-from pretrain.config import TrainingConfig
+# TrainingConfig is only ever an annotation here (quoted below), and importing
+# it for real would close a cycle: pretrain.pretraining's __init__ imports
+# task.py, which imports this module. Keeping it type-only leaves `import
+# pretrain.checkpoint` standalone.
+if TYPE_CHECKING:
+    from pretrain.pretraining.config import TrainingConfig
 
 
 class TrainingState:
@@ -93,7 +99,7 @@ class CheckpointManager:
         model: PreTrainedModel,
         val_loss: float,
         step: int,
-        config: TrainingConfig,
+        config: "TrainingConfig",
         accelerator: Accelerator,
     ) -> None:
         """Save checkpoint and manage top-k.
@@ -141,7 +147,7 @@ class CheckpointManager:
         self,
         model: PreTrainedModel,
         step: int,
-        config: TrainingConfig,
+        config: "TrainingConfig",
         accelerator: Accelerator,
     ) -> None:
         """Save the final ("last") model regardless of top-k ranking.

@@ -41,7 +41,7 @@ def collate_fn(
 
     # The store holds int32 ids to halve its size on disk. nn.Embedding accepts
     # int32, but task.py derives `labels` from these ids and cross-entropy
-    # requires int64 targets, so widen here -- once per batch, on a small tensor.
+    # requires int64 targets, so widen here - once per batch, on a small tensor.
     out = {"input_ids": padded_input_ids.long()}
     if return_attention_mask:
         positions = torch.arange(padded_input_ids.size(1))
@@ -71,7 +71,7 @@ class PretrainDataLoader:
         monolithic dataset: consolidating 30 shards into a single
         ``save_to_disk`` would copy ~120 GB for no benefit.
         ``concatenate_datasets`` joins them in sorted shard order, and that order
-        is what makes resume-by-sample-index correct -- the training loader runs
+        is what makes resume-by-sample-index correct - the training loader runs
         with ``shuffle=False`` so the on-disk order is the training order
         (tests/test_resume_dataloader.py::test_deterministic_order).
         """
@@ -83,7 +83,7 @@ class PretrainDataLoader:
         # `save_to_disk` writes the arrow files first and `state.json` last, so
         # its presence is what distinguishes a finished shard from one still being
         # written. Filtering on it lets a run start against a store that
-        # prepare_shards.py is still filling -- useful for test runs -- instead of
+        # prepare_shards.py is still filling - useful for test runs - instead of
         # dying on the half-written directory.
         all_dirs = sorted(data_path.glob("shard_*"))
         shard_dirs = [d for d in all_dirs if (d / "state.json").exists()]
@@ -93,7 +93,7 @@ class PretrainDataLoader:
             if skipped:
                 logger.warning(
                     "%s: %d of %d shard directories are incomplete and were "
-                    "skipped -- this run sees a partial corpus.",
+                    "skipped - this run sees a partial corpus.",
                     data_path,
                     skipped,
                     len(all_dirs),

@@ -19,9 +19,9 @@ from transformers import (
 )
 
 from pretrain.checkpoint import CheckpointManager, TrainingState
-from pretrain.config import TrainingConfig
-from pretrain.dataloader import PretrainDataLoader
 from pretrain.evaluation import EvaluationRunner
+from pretrain.pretraining.config import TrainingConfig
+from pretrain.pretraining.dataloader import PretrainDataLoader
 
 
 class PretrainTask:
@@ -413,7 +413,7 @@ class PretrainTask:
             training_state.step_in_epoch = step + 1
             training_state.tokens_seen = cumulative_tokens
 
-            # Log metrics (main process only -- one shared trackio run, not one
+            # Log metrics (main process only - one shared trackio run, not one
             # per DDP rank).
             if step % config.logging.log_every_n == 0:
                 # reduced loss across all ranks is reported in trackio
@@ -601,7 +601,7 @@ class PretrainTask:
         # Setup
         self._init_accelerator()
 
-        # Initialize logging. Only the main process talks to trackio -- under
+        # Initialize logging. Only the main process talks to trackio - under
         # DDP every process runs this same code, and initializing on every rank
         # would create one trackio run per rank instead of one shared run.
         # Continue the existing tracker run when resuming from a checkpoint's
