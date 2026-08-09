@@ -27,7 +27,7 @@ class DatasetConfig(BaseModel):
     ``dataset_format`` selects how TRL interprets rows:
       - ``"prompt_completion"``: rows of ``{"prompt": ..., "completion": ...}``.
         TRL masks the prompt automatically (loss on the completion only) with no
-        chat-template edit — the recommended default.
+        chat-template edit, the recommended default.
       - ``"conversational"``: rows of ``{"messages": [...]}`` rendered with the
         tokenizer's chat template. True assistant-only loss additionally needs
         ``assistant_only_loss=True`` and a chat template with ``{% generation %}``
@@ -43,7 +43,7 @@ class DatasetConfig(BaseModel):
 
     # One-time shuffle of the train split at startup (eval is left in order).
     # The Trainer also reshuffles each epoch, but this randomizes the initial
-    # order once — useful for mixed-source data and for packing.
+    # order once, useful for mixed-source data and for packing.
     shuffle: bool = True
     shuffle_seed: int = 0
 

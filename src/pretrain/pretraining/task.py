@@ -100,7 +100,7 @@ class PretrainTask:
             # Resuming: only the architecture is needed here; the actual weights are
             # restored later by accelerator.load_state from the saved training state.
             # Building from config (not from_pretrained) means we don't depend on HF
-            # weights being present in the checkpoint dir — just its config.json.
+            # weights being present in the checkpoint dir, just its config.json.
             #
             # A LoRA checkpoint holds only the adapter (adapter_config.json, no
             # config.json), so the base architecture config is read from the
@@ -179,7 +179,7 @@ class PretrainTask:
         config = self.config
 
         self.optimizer = torch.optim.AdamW(
-            # Only trainable params — under LoRA this is just the adapter; for
+            # Only trainable params: under LoRA this is just the adapter; for
             # full training every param requires grad, so this is a no-op.
             filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=config.optimizer.learning_rate,
@@ -318,7 +318,7 @@ class PretrainTask:
         # Average across processes so every rank agrees on the validation loss.
         # Each rank only sees its shard of the (prepared) val dataloader, so the
         # per-rank averages differ. Reducing here gives the true val-set loss and,
-        # crucially, keeps it identical on every rank — checkpoint directory names
+        # crucially, keeps it identical on every rank: checkpoint directory names
         # embed the loss, so divergent values make non-main ranks write orphaned
         # state-only checkpoint dirs that never get pruned.
         avg_val_loss = self.accelerator.reduce(

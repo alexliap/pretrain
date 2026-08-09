@@ -82,7 +82,7 @@ class CheckpointManager:
         """Persist a model to ``checkpoint_path`` (main process only).
 
         For a PEFT model this writes the adapter only (``adapter_config.json`` +
-        ``adapter_model.safetensors``) — the base weights are not duplicated, and
+        ``adapter_model.safetensors``): the base weights are not duplicated, and
         ``max_shard_size`` is not applicable. For a full model it shards as usual.
         """
         if hasattr(unwrapped_model, "peft_config"):
