@@ -5,8 +5,7 @@ from accelerate.utils import set_seed
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
-from pretrain.config import TrainingConfig
-from pretrain.task import PretrainTask
+from pretrain.pretraining import PretrainTask, TrainingConfig
 
 load_dotenv()
 set_seed(0)
@@ -19,7 +18,7 @@ def main(cfg: DictConfig) -> None:
     config = TrainingConfig.from_dict(cfg_dict)
 
     # Trackio init/finish and all logging happen inside PretrainTask, gated to
-    # the main process only -- under DDP every process runs this script, and
+    # the main process only - under DDP every process runs this script, and
     # initializing here unconditionally would create one trackio run per rank.
     PretrainTask(config).train()
 
