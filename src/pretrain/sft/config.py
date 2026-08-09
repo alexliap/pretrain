@@ -1,15 +1,16 @@
 """Configuration for supervised fine-tuning (SFT) runs.
 
-A parallel config to :class:`pretrain.config.TrainingConfig`, but shaped around
-``trl.SFTConfig``/``trl.SFTTrainer`` instead of the custom pretraining loop.
-Built on pydantic ``BaseModel`` so a resolved Hydra dict validates recursively
-in one call (``SFTRunConfig(**cfg_dict)``). The ``lora`` and ``logging`` sections
-are reused verbatim from the pretraining config (they are stdlib dataclasses;
-pydantic coerces the incoming dicts into them) so LoRA settings and trackio
-project naming stay consistent across pretraining, CPT, and SFT.
+A parallel config to :class:`pretrain.pretraining.config.TrainingConfig`, but
+shaped around ``trl.SFTConfig``/``trl.SFTTrainer`` instead of the custom
+pretraining loop. Built on pydantic ``BaseModel`` so a resolved Hydra dict
+validates recursively in one call (``SFTRunConfig(**cfg_dict)``). The ``lora``
+and ``logging`` sections are reused verbatim from the shared ``pretrain.config``
+(they are stdlib dataclasses; pydantic coerces the incoming dicts into them) so
+LoRA settings and trackio project naming stay consistent across pretraining,
+CPT, and SFT.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, model_validator
 
@@ -127,7 +128,7 @@ class SFTRunConfig(BaseModel):
         if self.tokenizer_path is None:
             self.tokenizer_path = self.model_name_or_path
         if not self.run_name:
-            now = datetime.now()
+            now = datetime.now(tz=UTC)
             self.run_name = f"sft-{now.date()}-{now.hour}-{now.minute}"
         return self
 

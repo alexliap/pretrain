@@ -1,8 +1,9 @@
 """Supervised fine-tuning workflow built on ``trl.SFTTrainer``.
 
-This is a parallel path to :class:`pretrain.task.PretrainTask`. Rather than the
-hand-rolled Accelerate loop, it delegates the training loop, data collation,
-prompt/completion loss masking, and checkpointing to TRL. The model/tokenizer
+This is a parallel path to :class:`pretrain.pretraining.task.PretrainTask`.
+Rather than the hand-rolled Accelerate loop, it delegates the training loop,
+data collation, prompt/completion loss masking, and checkpointing to TRL. The
+model/tokenizer
 load idiom mirrors ``PretrainTask._init_model_and_tokenizer`` (bf16 +
 flash-attn kernel) and the LoRA wrapping reuses the same ``peft.LoraConfig``
 shape as the pretraining path.
