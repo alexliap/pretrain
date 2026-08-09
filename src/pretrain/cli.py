@@ -5,7 +5,7 @@ import logging
 
 from dotenv import load_dotenv
 
-from pretrain.data import download_dataset, tokenize_dataset
+from pretrain.data import download_dataset, pack_tokenized_dataset, tokenize_dataset
 
 logging.basicConfig(
     level=logging.INFO,
@@ -77,6 +77,36 @@ def _add_tokenize_parser(subparsers: argparse._SubParsersAction) -> None:
     parser.set_defaults(func=_run_tokenize)
 
 
+def _add_pack_parser(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "pack",
+        help="Pack a tokenized dataset into fixed-length sequences (no padding waste).",
+    )
+    parser.add_argument(
+        "--input-dir",
+        default="tokenized_data/train",
+        help="Directory of the tokenized (save_to_disk) dataset (default: tokenized_data/train).",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default=None,
+        help="Directory the packed dataset is saved into "
+        "(default: tokenized_data/packed_train_data_<max-seq-length>).",
+    )
+    parser.add_argument(
+        "--max-seq-length",
+        type=int,
+        default=2048,
+        help="Sequence length each packed row is cut to (default: 2048).",
+    )
+    parser.add_argument(
+        "--flat",
+        action="store_true",
+        help="Save a plain Dataset instead of a DatasetDict with a 'train' split.",
+    )
+    parser.set_defaults(func=_run_pack)
+
+
 def _run_download(args: argparse.Namespace) -> None:
     download_dataset(
         repo_id=args.repo_id,
@@ -95,6 +125,15 @@ def _run_tokenize(args: argparse.Namespace) -> None:
     )
 
 
+def _run_pack(args: argparse.Namespace) -> None:
+    pack_tokenized_dataset(
+        input_dir=args.input_dir,
+        output_dir=args.output_dir,
+        max_seq_length=args.max_seq_length,
+        flat=args.flat,
+    )
+
+
 def main() -> None:
     """Entry point for the ``pretrain-data`` command."""
     parser = argparse.ArgumentParser(
@@ -105,6 +144,7 @@ def main() -> None:
 
     _add_download_parser(subparsers)
     _add_tokenize_parser(subparsers)
+    _add_pack_parser(subparsers)
 
     args = parser.parse_args()
     args.func(args)

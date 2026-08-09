@@ -12,16 +12,25 @@ against (``tests/test_packing.py``): at 30B tokens, materialising every token as
 a Python int would take the better part of a day, while the Arrow path slices
 zero-copy and runs in seconds per shard.
 
-``pack_data.py`` at the repo root is the CLI over this module.
+``pack_tokenized_dataset`` is the single-shot, ``pretrain-data pack``-facing
+path over ``pack_dataset``, mirroring ``tokenize_dataset`` in ``tokenize.py``.
+The typakos pipeline packs shard by shard from ``prepare_shards.py`` instead,
+calling ``pack_dataset`` directly rather than persisting an unpacked
+intermediate per shard.
 """
 
+import json
+import logging
 from collections.abc import Iterator
+from pathlib import Path
 
 import datasets
 import numpy as np
 import pyarrow as pa
-from datasets import Dataset
+from datasets import Dataset, DatasetDict, load_from_disk
 from tqdm import tqdm
+
+logger = logging.getLogger(__name__)
 
 PACKED_FEATURES = datasets.Features(
     {"input_ids": datasets.List(datasets.Value("int32"))}
@@ -140,3 +149,55 @@ def compute_stats_dict(stats: PackingStats, max_seq_length: int) -> dict:
         "avg_tokens_per_sequence": avg_tokens_per_sequence,
         "avg_examples_per_sequence": avg_examples_per_sequence,
     }
+
+
+def pack_tokenized_dataset(
+    input_dir: str,
+    output_dir: str | None = None,
+    max_seq_length: int = 2048,
+    flat: bool = False,
+) -> dict:
+    """Pack a ``save_to_disk`` tokenized dataset into ``output_dir``.
+
+    Single-shot path, kept for the ``pretrain-data pack`` CLI and small
+    datasets. The 30B corpus goes through ``prepare_shards.py`` instead, which
+    packs each shard as it is tokenized rather than persisting the unpacked
+    intermediate.
+    """
+    if output_dir is None:
+        output_dir = f"tokenized_data/packed_train_data_{max_seq_length}"
+
+    logger.info("Loading tokenized dataset from %s ...", input_dir)
+    dataset = load_from_disk(input_dir)
+    if isinstance(dataset, DatasetDict):
+        dataset = dataset["train"]
+
+    packed, stats = pack_dataset(dataset, max_seq_length)
+    logger.info(
+        "Packed %d examples into %d sequences (%d tokens, %.1f tokens/seq, "
+        "%.2f examples/seq)",
+        len(dataset),
+        stats["total_sequences"],
+        stats["total_tokens"],
+        stats["avg_tokens_per_sequence"],
+        stats["avg_examples_per_sequence"],
+    )
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+    to_save = packed if flat else DatasetDict({"train": packed})
+    to_save.save_to_disk(output_dir, num_proc=16)
+
+    all_stats = {"train": stats}
+    stats_path = output_path / "packing_stats.json"
+    with open(stats_path, "w") as f:
+        json.dump(
+            {
+                "config": {"max_seq_length": max_seq_length, "input_dir": input_dir},
+                "statistics": all_stats,
+            },
+            f,
+            indent=2,
+        )
+    logger.info("Packed dataset saved to %s (stats: %s)", output_dir, stats_path)
+    return all_stats
