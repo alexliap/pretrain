@@ -1,8 +1,8 @@
 """The dataloader must skip previously-seen batches on resume.
 
 These exercise the real ``PretrainDataLoader.train_dataloader`` and the real
-``accelerator.skip_first_batches`` — the exact pieces the resume path wires together
-in ``PretrainTask.train`` (task.py:594-608).
+``accelerator.skip_first_batches``, the exact pieces the resume path wires together
+in ``PretrainTask.train`` (pretraining/task.py:650-664).
 """
 
 import pytest
@@ -32,7 +32,7 @@ def _make_train_loader(params, batch_size=BATCH_SIZE):
 def test_skip_first_batches_yields_unseen_remainder(
     packed_dataset, cpu_accelerator, skip
 ):
-    """After skipping N batches, the loader resumes exactly at batch N — no sample
+    """After skipping N batches, the loader resumes exactly at batch N: no sample
     seen twice, none dropped."""
     loader = cpu_accelerator.prepare(_make_train_loader(packed_dataset))
 
