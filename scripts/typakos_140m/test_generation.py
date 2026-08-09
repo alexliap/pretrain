@@ -2,11 +2,12 @@
 of English and Greek prompts.
 
 This is a base (non-chat) causal LM, so prompts are plain-text continuations
-rather than chat turns.
+rather than chat turns. Run from the repo root - ``--model-path`` defaults to
+a checkpoint dir there.
 
 Example:
-    python test_generation.py
-    python test_generation.py --model-path typakos_model --max-new-tokens 80
+    python scripts/typakos_140m/test_generation.py
+    python scripts/typakos_140m/test_generation.py --model-path typakos_model --max-new-tokens 80
 """
 
 import argparse
@@ -47,7 +48,7 @@ def generate(
     temperature: float,
 ) -> str:
     # The tokenizer's post-processing template wraps every encoded sequence in
-    # bos ... eos -- deliberate (see train_tokenizer.py) so the data-prep
+    # bos ... eos - deliberate (see train_tokenizer.py) so the data-prep
     # pipeline gets free EOS-wrapping at tokenize time, without a separate pass
     # over the corpus to append it. That default is wrong for a generation
     # prompt though: a trailing eos tells the model the document is finished,

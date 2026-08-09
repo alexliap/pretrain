@@ -1,25 +1,26 @@
 """Tokenize and pack the mixed shards into the training store.
 
 One shard at a time: read its parquet, encode it, reshape the id stream into
-``max_seq_length`` rows, save, free. Nothing intermediate is persisted -- the
-tokenized-but-unpacked form only ever exists in memory -- so the disk holds the
+``max_seq_length`` rows, save, free. Nothing intermediate is persisted - the
+tokenized-but-unpacked form only ever exists in memory - so the disk holds the
 mixed text (61 GB) and the packed ids (~120 GB) and nothing else. Doing the whole
 30B corpus in one piece would instead need those plus two full Arrow caches.
 
-    python prepare_shards.py                    # all shards, resumable
-    python prepare_shards.py --shards 0 1 2     # a subset
-    python prepare_shards.py --stats-only       # re-aggregate the JSON reports
+    python scripts/typakos_140m/prepare_shards.py                # all shards, resumable
+    python scripts/typakos_140m/prepare_shards.py --shards 0 1 2 # a subset
+    python scripts/typakos_140m/prepare_shards.py --stats-only   # re-aggregate the JSON reports
 
-Shards already carrying a ``shard_stats.json`` are skipped, so an interrupted run
-resumes by re-running the same command.
+Run from the repo root - every path here is relative to it. Shards already
+carrying a ``shard_stats.json`` are skipped, so an interrupted run resumes by
+re-running the same command.
 
 Output layout::
 
     tokenized_data/
       test/                                  # held out, unpacked, variable length
-      token_distribution.json                # read by task.py
+      token_distribution.json                # read by pretrain.pretraining.task
       packed_train_data_2048/
-        shard_00/ ... shard_29/              # concatenated by dataloader.py
+        shard_00/ ... shard_29/              # concatenated by pretrain.pretraining.dataloader
         packing_stats.json
 """
 
@@ -32,7 +33,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 from datasets import Dataset, load_from_disk
 
-from pack_data import pack_dataset
+from pretrain.data.packing import pack_dataset
 from pretrain.data.tokenize import (
     count_tokens_per_source,
     load_tokenizer,
@@ -54,7 +55,7 @@ NUM_PROC = 16
 
 # Rows held out for validation, taken from the tail of the last shard. They are
 # left unpacked and variable-length because ``val_dataloader`` builds an
-# attention mask from real sequence lengths -- packing them would make every
+# attention mask from real sequence lengths - packing them would make every
 # validation sequence a splice of unrelated documents.
 TEST_ROWS = 500_000
 
@@ -63,7 +64,8 @@ def shard_paths(mixed_dir: Path) -> list[Path]:
     paths = sorted(mixed_dir.glob("shard_*.parquet"))
     if not paths:
         raise FileNotFoundError(
-            f"No shard_*.parquet under {mixed_dir}. Run `python concat_data.py` first."
+            f"No shard_*.parquet under {mixed_dir}. Run "
+            "`python scripts/typakos_140m/concat_data.py` first."
         )
     return paths
 
@@ -91,8 +93,8 @@ def build_test_split(
     Returns how many rows are actually held out, which the caller must exclude
     from training. When the split already exists the answer comes from the split
     itself rather than from `test_rows`: otherwise changing the constant between
-    a run and its resume would silently drop rows from -- or duplicate rows into
-    -- the training store.
+    a run and its resume would silently drop rows from - or duplicate rows into
+    - the training store.
     """
     test_dir = output_dir / "test"
     if (test_dir / "dataset_info.json").exists():
@@ -167,7 +169,7 @@ def aggregate(packed_dir: Path, output_dir: Path, max_seq_length: int) -> None:
 
     if not per_shard:
         logger.warning(
-            "No shard_stats.json under %s -- nothing to aggregate", packed_dir
+            "No shard_stats.json under %s - nothing to aggregate", packed_dir
         )
         return
 

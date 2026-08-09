@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 # Any Llama 3.x model carries the same 128,256-entry tokenizer and the same
 # pre-tokenization regex, so which size we borrow the pipeline from is
-# immaterial -- only its structure is used, never its vocabulary.
+# immaterial - only its structure is used, never its vocabulary.
 BASE_TOKENIZER = "meta-llama/Llama-3.2-1B"
 
 N_LEARNED = 50_000
@@ -59,8 +59,8 @@ CORPUS_WEIGHTS = {
 def build_tokenizer() -> Tokenizer:
     """Llama 3.2's tokenization pipeline with an emptied vocabulary.
 
-    Keeping the pipeline as data off the real artifact -- rather than
-    transcribing its regex here -- means the pre-tokenizer cannot silently drift
+    Keeping the pipeline as data off the real artifact - rather than
+    transcribing its regex here - means the pre-tokenizer cannot silently drift
     from the reference implementation.
     """
     base = AutoTokenizer.from_pretrained(
@@ -89,7 +89,7 @@ def _take_bytes(path: Path, budget: int, out: list[str]) -> int:
     """Append documents from `path` to `out` until `budget` bytes are taken.
 
     Reads in row chunks and stops as soon as the budget is met, so only the row
-    groups actually needed are touched -- a 2 GB shard never lands in memory
+    groups actually needed are touched - a 2 GB shard never lands in memory
     whole. Counting real bytes as we go, rather than extrapolating from the first
     N rows, matters because document length is heavily skewed in these sources
     (the head of a shard is not representative of its mean).
@@ -127,7 +127,7 @@ def sample_texts(sample_gb: float) -> list[str]:
         if not files:
             raise FileNotFoundError(
                 f"No parquet files for '{source}' under data/raw/{source}. "
-                "Run `python download_data.py --probe` first."
+                "Run `python scripts/typakos_140m/download_data.py --probe` first."
             )
 
         requested = int(budget * weight)
@@ -176,7 +176,7 @@ def sample_texts(sample_gb: float) -> list[str]:
     )
     if abs(realised_en - target_en) > 0.05:
         logger.warning(
-            "Realised English share is %.0f%% against a %.0f%% target -- the "
+            "Realised English share is %.0f%% against a %.0f%% target - the "
             "vocabulary will be skewed towards the over-represented language.",
             realised_en * 100,
             target_en * 100,
@@ -223,7 +223,7 @@ def verify(tokenizer: PreTrainedTokenizerFast, vocab_size: int = VOCAB_SIZE) -> 
 
 
 def report_fertility(tokenizer: PreTrainedTokenizerFast) -> dict[str, float]:
-    """Log bytes-per-token per source -- the number that sizes the corpus.
+    """Log bytes-per-token per source - the number that sizes the corpus.
 
     Also compares against the Llama 3.2 base on Greek: Greek characters cost two
     UTF-8 bytes each, so a tokenizer that has not learned Greek subwords drifts

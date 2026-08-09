@@ -6,16 +6,18 @@ sources (Greek costs ~7.2 bytes/token, English ~4.5, and mean document length
 ranges from 2.4 KB to 15 KB). This script measures that ratio with the real
 tokenizer and writes:
 
-    data/token_rates.json  -- bytes/token and tokens/row per source, plus the
+    data/token_rates.json  - bytes/token and tokens/row per source, plus the
                               token pool each source can supply
-    data/mix_plan.json     -- rows to take from each source to hit the target
+    data/mix_plan.json     - rows to take from each source to hit the target
                               budget at the target English/Greek split
 
 ``concat_data.py`` consumes the mix plan. Row counts come from parquet footers
 (exact, cheap) and tokens/row from a sample spread across shards, so the pool
 estimate does not depend on reading 433 GB of text.
 
-    python measure_token_rates.py --budget 50e9 --en-share 0.5
+    python scripts/typakos_140m/measure_token_rates.py --budget 50e9 --en-share 0.5
+
+Run from the repo root - every path here is relative to it.
 """
 
 import argparse
@@ -120,8 +122,8 @@ def plan_mix(rates: dict[str, dict], budget: float, en_share: float) -> dict[str
     """Allocate the token budget across sources, then convert to row counts.
 
     Greek is allocated by priority rather than proportionally: the curated
-    sources (including synthetic) are taken in full first, and cc_greek -- the
-    only source deep enough to absorb whatever is left -- fills the remainder.
+    sources (including synthetic) are taken in full first, and cc_greek - the
+    only source deep enough to absorb whatever is left - fills the remainder.
     That keeps the highest-quality Greek text at 100% inclusion instead of
     subsampling it to hit a ratio.
     """
@@ -211,7 +213,7 @@ def _report_plan(plan, budget, en_target, el_target, shortfall) -> None:
         e["target_tokens"] for s, e in plan.items() if s.startswith("synth_")
     )
     logger.info(
-        "TOTAL %.2fB tokens -- %.1f%% EN / %.1f%% EL, synth %.1f%% of Greek",
+        "TOTAL %.2fB tokens - %.1f%% EN / %.1f%% EL, synth %.1f%% of Greek",
         total / 1e9,
         100 * got_en / total,
         100 * got_el / total,
@@ -222,7 +224,7 @@ def _report_plan(plan, budget, en_target, el_target, shortfall) -> None:
     # only a real shortfall is worth a warning.
     if shortfall > 0.005 * el_target:
         logger.warning(
-            "Greek is %.2fB tokens SHORT of its %.2fB target -- the Greek pool is "
+            "Greek is %.2fB tokens SHORT of its %.2fB target - the Greek pool is "
             "exhausted. Lower --budget or --en-share.",
             shortfall / 1e9,
             el_target / 1e9,
@@ -272,7 +274,7 @@ def main() -> None:
     )
     if args.budget > budget_max:
         logger.warning(
-            "Requested budget %.1fB exceeds the feasible %.1fB -- the plan below "
+            "Requested budget %.1fB exceeds the feasible %.1fB - the plan below "
             "will come up short.",
             args.budget / 1e9,
             budget_max / 1e9,

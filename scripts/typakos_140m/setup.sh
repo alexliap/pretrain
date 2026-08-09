@@ -2,7 +2,7 @@
 # Bootstrap a dev environment: install uv, create a 3.13 venv, sync deps, and
 # pull down the bilingual tokenizer and the 10B-token dataset from the Hub.
 set -euo pipefail
-cd "$(dirname "${BASH_SOURCE[0]}")"
+cd "$(dirname "${BASH_SOURCE[0]}")/../.."
 
 if ! command -v uv >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh | sh

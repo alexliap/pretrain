@@ -2,21 +2,21 @@
 
 Every source is declared once in ``SOURCES``. Shard file lists are enumerated
 from the Hub at runtime rather than hardcoded, and shards are taken in sorted
-order, so a given file count always resolves to the same set of files -- runs are
+order, so a given file count always resolves to the same set of files - runs are
 reproducible and interrupted runs resume for free (``snapshot_download`` skips
 files already present).
 
-Four modes:
+Four modes (run from the repo root):
 
-    # small balanced sample -- enough to train the tokenizer and measure
+    # small balanced sample - enough to train the tokenizer and measure
     # bytes-per-token per source (uses each source's probe_files)
-    python download_data.py --probe
+    python scripts/typakos_140m/download_data.py --probe
 
     # every shard of every source, ~459 GB
-    python download_data.py --full
+    python scripts/typakos_140m/download_data.py --full
 
     # a sized subset, e.g. as written by measure_token_rates.py
-    python download_data.py --plan data/download_plan.json
+    python scripts/typakos_140m/download_data.py --plan data/download_plan.json
 
 All modes are incremental: shards already on disk are skipped, so a plan can be
 topped up to --full later without re-fetching anything.
@@ -49,7 +49,7 @@ RAW_DIR = Path("data/raw")
 # how many shards the --probe stage pulls (None = all of them).
 #
 # Deliberately absent:
-#   high-quality-gr-text/finepdfs_el  -- OCR'd PDFs, noisy
+#   high-quality-gr-text/finepdfs_el  - OCR'd PDFs, noisy
 SOURCES: dict[str, dict] = {
     "fineweb_edu": {
         "repo_id": "HuggingFaceFW/fineweb-edu",
@@ -157,7 +157,7 @@ def downloaded_files(source: str) -> list[Path]:
     """Parquet files already on disk for `source`.
 
     ``snapshot_download`` preserves the repo's directory layout inside the target
-    directory, so the files sit one or more levels down -- hence the recursive
+    directory, so the files sit one or more levels down - hence the recursive
     glob rather than a fixed depth.
     """
     return sorted((RAW_DIR / source).rglob("*.parquet"))

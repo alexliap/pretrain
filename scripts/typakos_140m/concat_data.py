@@ -7,8 +7,8 @@ proportions as the corpus as a whole and internally shuffled.
 Two properties matter downstream:
 
 * **Every shard is a miniature of the whole mix.** The training dataloader reads
-  with ``shuffle=False`` on purpose -- resume correctness depends on a stable
-  order -- so the on-disk order *is* the training order. A shard that was all
+  with ``shuffle=False`` on purpose - resume correctness depends on a stable
+  order - so the on-disk order *is* the training order. A shard that was all
   Greek followed by a shard that was all English would train very differently
   from a 50/50 corpus.
 
@@ -16,7 +16,9 @@ Two properties matter downstream:
   piece would need far more scratch space than the disk has; one shard at a time
   keeps intermediates to roughly a tenth of that.
 
-    python concat_data.py --n-shards 10
+    python scripts/typakos_140m/concat_data.py --n-shards 10
+
+Run from the repo root - every path here is relative to it.
 """
 
 import argparse
@@ -49,7 +51,7 @@ def _chunks(
     dealt out to shards with a stride and each group is read from its start: one
     pass over the data, and no offset to scan past. Sources with fewer files than
     shards must serve several shards from the same file, so their filtered stream
-    is sliced by row instead -- those sources are small (under 4 GB), so the
+    is sliced by row instead - those sources are small (under 4 GB), so the
     repeated scan costs little.
     """
     files = downloaded_files(source)
@@ -174,7 +176,7 @@ def _report(plan: dict, realised: dict, n_shards: int, out_dir: Path) -> dict:
         short = 1 - got["rows"] / entry["target_rows"] if entry["target_rows"] else 0
         if short > 0.02:
             logger.warning(
-                "'%s' delivered %d of %d planned rows (%.0f%% short) -- its pool is "
+                "'%s' delivered %d of %d planned rows (%.0f%% short) - its pool is "
                 "smaller than the plan assumed.",
                 source,
                 got["rows"],
@@ -195,7 +197,7 @@ def _report(plan: dict, realised: dict, n_shards: int, out_dir: Path) -> dict:
     est_total = sum(est_tokens.values())
 
     logger.info(
-        "TOTAL %d rows, %.1f GB text, ~%.2fB tokens -- %.1f%% EN / %.1f%% EL",
+        "TOTAL %d rows, %.1f GB text, ~%.2fB tokens - %.1f%% EN / %.1f%% EL",
         total_rows,
         total_bytes / 1e9,
         est_total / 1e9,
