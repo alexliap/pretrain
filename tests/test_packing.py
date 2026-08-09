@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 from datasets import Dataset
 
-from pack_data import pack_dataset, pack_dataset_generator
+from pretrain.data.packing import pack_dataset, pack_dataset_generator
 
 FEATURES = datasets.Features({"input_ids": datasets.List(datasets.Value("int32"))})
 
@@ -61,7 +61,7 @@ def test_invariants():
 
 def test_spans_several_arrow_chunks(monkeypatch):
     """The chunked assembly must not drop or reorder tokens at chunk borders."""
-    monkeypatch.setattr("pack_data.ROWS_PER_CHUNK", 3)
+    monkeypatch.setattr("pretrain.data.packing.ROWS_PER_CHUNK", 3)
     dataset = make_dataset(np.random.default_rng(3).integers(1, 200, size=200))
     reference = [row["input_ids"] for row in pack_dataset_generator(dataset, 64)]
     packed, _ = pack_dataset(dataset, 64)

@@ -7,7 +7,7 @@ in ``PretrainTask.train`` (task.py:594-608).
 
 import pytest
 
-from pretrain.dataloader import PretrainDataLoader
+from pretrain.pretraining.dataloader import PretrainDataLoader
 
 BATCH_SIZE = 4
 
