@@ -53,12 +53,15 @@ def generate(
     eos_token_ids: list[int],
 ) -> str:
     messages = [{"role": "user", "content": prompt}]
-    input_ids = tokenizer.apply_chat_template(
-        messages, add_generation_prompt=True, return_tensors="pt"
+    inputs = tokenizer.apply_chat_template(
+        messages,
+        add_generation_prompt=True,
+        return_tensors="pt",
+        return_dict=True,
     ).to(device)
+    input_ids = inputs["input_ids"]
     output_ids = model.generate(
-        input_ids=input_ids,
-        attention_mask=torch.ones_like(input_ids),
+        **inputs,
         max_new_tokens=max_new_tokens,
         do_sample=do_sample,
         temperature=temperature if do_sample else None,
