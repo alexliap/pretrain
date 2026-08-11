@@ -185,12 +185,17 @@ and splits off 10% as validation:
 | train | 936,491 |
 | validation | 104,055 |
 
-Saved as a single `datasets.DatasetDict` to `data/sft_pool/`, the format
-`pretrain.sft.task.SFTTask._load_split` expects when `dataset_id` points at a
-local directory (`dataset_split: "train"`, `eval_split: "validation"`). Also
-pushed to the private Hub dataset repo
+Saved as a single `datasets.DatasetDict` to `data/sft_pool/` (`save_to_disk`
+format) and pushed to the private Hub dataset repo
 [`alexliap/typakos_sft_dataset`](https://huggingface.co/datasets/alexliap/typakos_sft_dataset)
-(`DatasetDict.push_to_hub`, both splits).
+(`DatasetDict.push_to_hub`, both splits). `setup_sft.sh` pulls that Hub repo
+back down as a raw parquet snapshot to `data/typakos_sft_dataset/` rather than
+regenerating the local `data/sft_pool/` copy, so `configs/sft.yaml`'s
+`dataset.dataset_id` points at `data/typakos_sft_dataset` instead --
+`pretrain.sft.task.SFTTask._load_split` detects the missing
+`dataset_dict.json`/`dataset_info.json` `save_to_disk` markers there and falls
+back to `datasets.load_dataset`, which auto-discovers the `train-*`/
+`validation-*` parquet split pattern the same way it would for a Hub id.
 
 ```bash
 python scripts/typakos_140m/concat_sft_data.py
@@ -223,14 +228,24 @@ via [`upload_checkpoint.sh`](../../upload_checkpoint.sh).
 ### SFT config
 
 [`configs/sft.yaml`](configs/sft.yaml) points `trl.SFTTrainer` (via the repo
-root's `sft.py`) at `typakos_sft_model` and `data/sft_pool`, same pattern as
-[`configs/train.yaml`](configs/train.yaml): a directory-local snapshot rather
-than the root `configs/sft.yaml`, which is a different, unrelated experiment.
-Full-parameter SFT (no LoRA, `typakos_140m` is small enough not to need it),
-`dataset_format: "conversational"`, `assistant_only_loss: true`. No
-`chat_template_path` override needed, `typakos_sft_model`'s tokenizer already
-carries `chat_template.jinja`. The `sft:` block's batch size / epochs / eval
-cadence are untuned starting points, not a recovered or validated run like
+root's `sft.py`) at `models/typakos_sft_model` and `data/typakos_sft_dataset`,
+same pattern as [`configs/train.yaml`](configs/train.yaml): a directory-local
+snapshot rather than the root `configs/sft.yaml`, which is a different,
+unrelated experiment. Full-parameter SFT (no LoRA, `typakos_140m` is small
+enough not to need it), `dataset_format: "conversational"`,
+`assistant_only_loss: true`. No `chat_template_path` override needed,
+`typakos_sft_model`'s tokenizer already carries `chat_template.jinja`.
+`adam_beta1`/`adam_beta2`/`adam_epsilon` are set to match the pretraining
+run's optimizer (0.9 / 0.95 / 1e-10, see [Training setup](#training-setup));
+`warmup_ratio` is left `null` since the installed `transformers` (5.x) dropped
+that field from `TrainingArguments` entirely, so only `warmup_steps` is
+honored (`SFTTask._build_sft_config` only forwards `warmup_ratio` when set,
+to avoid a `TypeError`). `dataset_num_proc: 16` parallelizes `SFTTrainer`'s
+upfront tokenize/label-building pass across CPU cores -- without it, that
+single-process pass over the full ~936K-row train split can outlast
+`accelerate`'s NCCL barrier timeout while the other 7 ranks wait on an 8-GPU
+launch. The `sft:` block's batch size / epochs / eval cadence are otherwise
+still untuned starting points, not a recovered or validated run like
 `train.yaml`.
 
 ```bash
