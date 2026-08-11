@@ -1,7 +1,6 @@
 """Entry point for supervised fine-tuning (SFT)."""
 
 import hydra
-import trackio
 from accelerate.utils import set_seed
 from omegaconf import DictConfig, OmegaConf
 
@@ -16,19 +15,10 @@ def main(cfg: DictConfig) -> None:
     cfg_dict = OmegaConf.to_container(cfg, resolve=True)
     config = SFTRunConfig(**cfg_dict)
 
-    # trackio is auto-attached to the TRL Trainer via report_to="trackio"; we
-    # only initialize/finish the run around it (mirrors main.py).
-    trackio.init(
-        project=config.logging.project_name,
-        auto_log_gpu=config.logging.auto_log_gpu,
-        name=config.run_name,
-        config=config.get_dict(),
-        space_id=None,
-    )
-
+    # Trackio init/finish and all logging happen inside SFTTask, gated to the
+    # main process only - under DDP every process runs this script, and
+    # initializing here unconditionally would create one trackio run per rank.
     SFTTask(config).train()
-
-    trackio.finish()
 
 
 if __name__ == "__main__":

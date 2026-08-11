@@ -1,7 +1,10 @@
-# SFT config for typakos_140m. Starts from typakos_sft_model/ (the base
-# checkpoint plus chat-template special tokens and resized embeddings, see
-# add_chat_template.py) and trains on data/sft_pool (the merged, shuffled
-# train/validation split from concat_sft_data.py).
+# SFT config for typakos_140m. Starts from models/typakos_sft_model/ (the
+# base checkpoint plus chat-template special tokens and resized embeddings,
+# see add_chat_template.py) and trains on data/typakos_sft_dataset (the
+# merged, shuffled train/validation split from concat_sft_data.py, pulled
+# locally by setup_sft.sh from the alexliap/typakos_sft_dataset Hub repo as a
+# raw parquet snapshot rather than a save_to_disk dir -- see
+# SFTTask._load_split's local-dir handling).
 #
 # The `sft` block's batch size / epochs / eval cadence below are untuned
 # starting points, not a recovered or validated run like ../train.yaml -
@@ -21,7 +24,7 @@ hydra:
   run:
     dir: .
 
-model_name_or_path: "typakos_sft_model"
+model_name_or_path: "models/typakos_sft_model"
 tokenizer_path: null
 
 # typakos_sft_model's tokenizer already carries chat_template.jinja (with
@@ -37,7 +40,7 @@ run_name: "typakos_140m_sft_v1"
 lora: null
 
 dataset:
-  dataset_id: "data/sft_pool"
+  dataset_id: "data/typakos_sft_dataset"
   dataset_split: "train"
   eval_split: "validation"
   dataset_format: "conversational"      # rows of {"messages": [{"role", "content"}, ...]}
@@ -56,9 +59,15 @@ sft:
   warmup_ratio: null             # keep null: transformers 5.x lets warmup_steps win when set
   warmup_steps: 0.1             # fraction of total steps (see ../../../src/pretrain/sft/config.py)
   max_grad_norm: 1.0
-  weight_decay: 0.0
+  weight_decay: 0.01
+  # Betas/eps match the typakos_140m pretraining run (configs/train.yaml's
+  # optimizer block).
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1e-10
   max_length: 2048
   packing: false
+  dataset_num_proc: 16
   # Loss on assistant turns only. Needs chat_template.jinja's {% generation %}
   # markers, confirmed present (see README.md's Post-training section).
   assistant_only_loss: true

@@ -70,12 +70,16 @@ class SFTArgsConfig(BaseModel):
     warmup_steps: float = 0
     max_grad_norm: float = 1.0
     weight_decay: float = 0.0
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.95
+    adam_epsilon: float = 1e-10
 
     # SFT data handling
     max_length: int = 2048
     packing: bool = False
     assistant_only_loss: bool = False
     completion_only_loss: bool | None = None
+    dataset_num_proc: int | None = 16
 
     # Precision / memory
     bf16: bool = True

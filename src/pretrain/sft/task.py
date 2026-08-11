@@ -13,6 +13,7 @@ import os
 
 import torch
 import trackio
+from accelerate import PartialState
 from datasets import load_dataset, load_from_disk
 from peft import LoraConfig as PeftLoraConfig
 from transformers import AutoTokenizer, TrainerCallback
@@ -22,7 +23,7 @@ from pretrain.sft.config import SFTRunConfig
 
 
 class TrackioCallback(TrainerCallback):
-    """Log TRL/Trainer metrics to the trackio run started in ``sft.py``.
+    """Log TRL/Trainer metrics to the trackio run started in ``SFTTask.train``.
 
     We don't use transformers' built-in ``report_to="trackio"`` integration: in
     transformers 5.12.1 its callback calls ``trackio.init(bucket_id=...)``, an
@@ -57,9 +58,15 @@ class SFTTask:
         return tokenizer
 
     def _load_split(self, split: str):
-        """Load a dataset split from the Hub or a local ``save_to_disk`` dir."""
+        """Load a dataset split from the Hub, a local ``save_to_disk`` dir, or a
+        local raw-file directory (e.g. a ``hf download`` snapshot of a Hub
+        dataset repo, with data files under ``data/`` and no
+        ``dataset_dict.json``/``dataset_info.json`` marker)."""
         dataset_id = self.config.dataset.dataset_id
-        if os.path.isdir(dataset_id):
+        is_saved_to_disk = os.path.isfile(
+            os.path.join(dataset_id, "dataset_dict.json")
+        ) or os.path.isfile(os.path.join(dataset_id, "dataset_info.json"))
+        if is_saved_to_disk:
             dataset = load_from_disk(dataset_id)
             # load_from_disk yields a DatasetDict for saved splits, or a bare
             # Dataset when a single split was saved.
@@ -68,6 +75,9 @@ class SFTTask:
             ):
                 return dataset[split]
             return dataset
+        # Hub id or a local directory of raw data files: load_dataset handles
+        # both the same way, auto-detecting splits from filename patterns
+        # (train-*, validation-*, ...).
         return load_dataset(dataset_id, split=split)
 
     def _build_peft_config(self) -> PeftLoraConfig | None:
@@ -95,6 +105,14 @@ class SFTTask:
             "attn_implementation": cfg.attn_implementation,
         }
 
+        # transformers 5.15 dropped `warmup_ratio` from TrainingArguments
+        # entirely (not just deprecated it), so it can't be forwarded even as
+        # None. Only pass it through when actually set, letting warmup_steps
+        # win otherwise (see SFTArgsConfig.warmup_ratio's docstring).
+        warmup_kwargs = {}
+        if sft.warmup_ratio is not None:
+            warmup_kwargs["warmup_ratio"] = sft.warmup_ratio
+
         return SFTConfig(
             output_dir=sft.output_dir,
             num_train_epochs=sft.num_train_epochs,
@@ -104,12 +122,16 @@ class SFTTask:
             gradient_accumulation_steps=sft.gradient_accumulation_steps,
             learning_rate=sft.learning_rate,
             lr_scheduler_type=sft.lr_scheduler_type,
-            warmup_ratio=sft.warmup_ratio,
             warmup_steps=sft.warmup_steps,
+            **warmup_kwargs,
             max_grad_norm=sft.max_grad_norm,
             weight_decay=sft.weight_decay,
+            adam_beta1=sft.adam_beta1,
+            adam_beta2=sft.adam_beta2,
+            adam_epsilon=sft.adam_epsilon,
             max_length=sft.max_length,
             packing=sft.packing,
+            dataset_num_proc=sft.dataset_num_proc,
             assistant_only_loss=sft.assistant_only_loss,
             completion_only_loss=sft.completion_only_loss,
             bf16=sft.bf16,
@@ -129,6 +151,19 @@ class SFTTask:
     def train(self) -> None:
         """Run the SFT job end-to-end."""
         config = self.config
+
+        # Only the main process talks to trackio - under DDP every process
+        # runs this same code, and initializing on every rank would create
+        # one trackio run per rank instead of one shared run.
+        is_main_process = PartialState().is_main_process
+        if is_main_process:
+            trackio.init(
+                project=config.logging.project_name,
+                auto_log_gpu=config.logging.auto_log_gpu,
+                name=config.run_name,
+                config=config.get_dict(),
+                space_id=None,
+            )
 
         tokenizer = self._load_tokenizer()
         train_dataset = self._load_split(config.dataset.dataset_split)
@@ -157,3 +192,6 @@ class SFTTask:
 
         trainer.save_model(config.sft.output_dir)
         trainer.save_state()
+
+        if is_main_process:
+            trackio.finish()
