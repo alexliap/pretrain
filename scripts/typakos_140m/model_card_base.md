@@ -125,6 +125,24 @@ Evaluated 0-shot with [EleutherAI lm-evaluation-harness](https://github.com/Eleu
 
 > The gap to SmolLM2-135M-8k below is largely a training-budget gap, not an architecture gap: per its [model card](https://huggingface.co/HuggingFaceTB/SmolLM2-135M), SmolLM2-135M was pretrained on about 2T tokens, roughly 200 times the ~9.33B tokens Typakos-140M-Base has seen, on a curated English-only mix (FineWeb-Edu, DCLM, The Stack, plus additional filtered sources). Typakos-140M-Base is a single-stage, from-scratch run on a much smaller, bilingual (EN/EL) corpus, so it is comparable in size and architecture but not yet in data scale.
 
+### Greek Suite
+
+Evaluated 0-shot on the `ilsp_greek` task suite (65 sub-tasks, including all 57 `mmlu_greek` subject splits). No SmolLM2 reference exists for these tasks, so they are reported standalone:
+
+| Task | Typakos-140M-Base |
+|---|---:|
+| arc_challenge_greek (acc) | 20.2 |
+| hellaswag_greek (acc) | 26.5 |
+| mmlu_greek (acc, 57 subj.) | 23.0 |
+| mgsm_direct_greek (exact_match) | 3.6 |
+| winogrande_greek (acc) | 49.7 |
+| truthfulqa_greek_mc1 (acc) | 23.9 |
+| truthfulqa_greek_mc2 (acc) | 44.5 |
+| medical_mcqa_greek (acc) | 15.3 |
+| mcqa_greek_asep (acc) | 18.3 |
+
+`medical_mcqa_greek` and `mcqa_greek_asep` have no English-benchmark equivalent and are reported for completeness only. `winogrande_greek` uses a different task formulation than the English `winogrande` row above (full-candidate-sentence plausibility scoring rather than fill-in-the-blank), so the two are not directly comparable.
+
 ## Limitations
 
 - It is a base, completion-only model with no instruction tuning or chat capability.
