@@ -1,5 +1,7 @@
 # typakos-140m
 
+![Typakos](tyapkos.png)
+
 The pretraining stage of **typakos**, a 140M-parameter bilingual (Greek /
 English) base language model. Trained from scratch (no warm start) on ~9.33B tokens, full-parameter. `typakos_model/` itself is a **base** checkpoint: no chat template, no instruction tuning. This directory also holds the post-training steps that build on it, see [Post-training](#post-training) below.
 

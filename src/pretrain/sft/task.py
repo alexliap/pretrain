@@ -14,7 +14,7 @@ import os
 import torch
 import trackio
 from accelerate import PartialState
-from datasets import load_dataset, load_from_disk
+from datasets import DatasetDict, load_dataset, load_from_disk
 from peft import LoraConfig as PeftLoraConfig
 from transformers import AutoTokenizer, TrainerCallback
 from trl import SFTConfig, SFTTrainer
@@ -70,11 +70,7 @@ class SFTTask:
             dataset = load_from_disk(dataset_id)
             # load_from_disk yields a DatasetDict for saved splits, or a bare
             # Dataset when a single split was saved.
-            if hasattr(dataset, "column_names") and isinstance(
-                dataset.column_names, dict
-            ):
-                return dataset[split]
-            return dataset
+            return dataset[split] if isinstance(dataset, DatasetDict) else dataset
         # Hub id or a local directory of raw data files: load_dataset handles
         # both the same way, auto-detecting splits from filename patterns
         # (train-*, validation-*, ...).

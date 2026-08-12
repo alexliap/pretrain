@@ -19,6 +19,8 @@ datasets:
 
 # Typakos-140M-Base
 
+![Typakos](tyapkos.png)
+
 The name "Typakos" comes from the Greek "Τυπάκος," meaning "small dude," a nod to the model's small (140M) parameter count.
 
 Typakos-140M-Base is a 140M-parameter bilingual (Greek/English) base language model with a Llama-family architecture and a 2048-token context length. It was trained from scratch (no warm start), full-parameter, on approximately 9.33B tokens split roughly 50/50 between English and Greek. This is a **base, completion-only checkpoint**: it has no chat template and has not undergone any instruction tuning, so it should be prompted as a plain text continuation model, not as a chat assistant.
@@ -42,7 +44,7 @@ The full training pipeline, code, and configs live in [`scripts/typakos_140m/`](
 
 ## Tokenizer
 
-[`alexliap/bilingual_el_en_50k`](https://huggingface.co/alexliap/bilingual_el_en_50k): a byte-level BPE tokenizer with 50,000 learned merges plus 256 byte tokens and 2 special tokens (`<|begin_of_text|>`, id 0; `<|end_of_text|>`, id 1, which also doubles as the pad token). The pre-tokenizer regex pipeline is structurally borrowed from Llama 3.2, but the vocabulary itself was trained from scratch on the bilingual corpus below.
+A byte-level BPE tokenizer with 50,000 learned merges plus 256 byte tokens and 2 special tokens (`<|begin_of_text|>`, id 0; `<|end_of_text|>`, id 1, which also doubles as the pad token). The pre-tokenizer regex pipeline is structurally borrowed from Llama 3.2, but the vocabulary itself was trained from scratch on the bilingual corpus below.
 
 The tokenizer's post-processor wraps every encode in `<|begin_of_text|> ... <|end_of_text|>` by default. This is convenient for training but wrong for a generation prompt (a trailing EOS tells the model the prompt is already a finished document). See the usage example below for how to bypass it.
 
