@@ -4,6 +4,7 @@ language:
 - el
 license: mit
 library_name: transformers
+base_model: alexliap/typakos-140m-base
 pipeline_tag: text-generation
 tags:
 - llama
