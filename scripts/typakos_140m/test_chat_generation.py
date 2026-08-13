@@ -78,7 +78,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     parser.add_argument(
         "--model-path",
-        default="alexliap/typakos_140m_it",
+        default="alexliap/typakos-140m-it",
         help="SFT checkpoint directory.",
     )
     parser.add_argument("--max-new-tokens", type=int, default=120)

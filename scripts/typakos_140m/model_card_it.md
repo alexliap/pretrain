@@ -32,8 +32,7 @@ Typakos-140M-it is the instruction-tuned, preference-aligned chat model built on
 [`alexliap/typakos-140m-base`](https://huggingface.co/alexliap/typakos-140m-base), a 140M-parameter
 bilingual (Greek/English) base language model. It's produced by a two-stage post-training pipeline
 on the base checkpoint: supervised fine-tuning (SFT) for instruction-following and chat formatting,
-followed by Direct Preference Optimization (DPO) for preference alignment. Both stages are
-full-parameter (no LoRA): 140M params is small enough not to need it.
+followed by Direct Preference Optimization (DPO) for preference alignment. Both stages train all the parameters.
 
 The full training pipeline, code, and configs live in
 [`scripts/typakos_140m/`](https://github.com/alexliap/pretrain/tree/llama120_gr/scripts/typakos_140m)
@@ -158,9 +157,33 @@ input_ids = tokenizer.apply_chat_template(
     messages, add_generation_prompt=True, return_tensors="pt"
 )
 
-output = model.generate(input_ids, max_new_tokens=200, do_sample=True, temperature=0.7)
+output = model.generate(input_ids, max_new_tokens=200, do_sample=False, temperature=0.7)
 print(tokenizer.decode(output[0][input_ids.shape[-1] :], skip_special_tokens=True))
 ```
+
+## Example Outputs
+
+Greedy-decoded (`do_sample=False`) chat completions from the final DPO checkpoint. Chosen to show
+both the model's capability and its main failure mode: without a repetition penalty, greedy
+decoding tends to lock onto a phrase and loop it.
+
+**English** -- `What is the capital of France?`
+> The capital of France is Paris, which is the capital of France, and it is the capital of the
+> French Empire. The capital is the capital of the French Empire, which is the capital of
+> France. [...loops]
+
+**Greek** -- `Ποια είναι η πρωτεύουσα της Ελλάδας;`
+> Η πρωτεύουσα της Ελλάδας είναι η Αθήνα, η οποία είναι η πρωτεύουσα της Ελλάδας. Η πρωτεύουσα
+> της Ελλάδας είναι η Αθήνα, η οποία είναι η πρωτεύουσα της Ελλάδας. [...loops]
+
+**Greek** -- `Τι είναι η τεχνητή νοημοσύνη;`
+> Η τεχνητή νοημοσύνη (AI) είναι μια μορφή τεχνητής νοημοσύνης που χρησιμοποιείται για την
+> ανάλυση και την ανάλυση δεδομένων. Είναι μια μορφή που χρησιμοποιείται για την ανάλυση
+> δεδομένων, την ανάλυση δεδομένων και την ανάλυση δεδομένων. [...loops]
+
+Both examples get the underlying fact right (Paris, Athens) and stay grammatical throughout, but
+repeat themselves rather than moving on once they lock onto a clause. Sampling avoids the
+repetition but trades it for occasional factual drift; see [Limitations](#limitations).
 
 ## Evaluation
 
@@ -170,8 +193,8 @@ _TBD: evaluation results pending._
 
 - Small (140M parameter) model; expect base-rate reasoning/knowledge limitations consistent with
   its scale and ~9.33B-token pretraining budget (see the base model card's evaluation table).
-- Preference data (`openeurollm/Dolci-Instruct-DPO-translated`) is translated rather than native
-  Greek in the `el` split, which may carry translation artifacts into alignment behavior.
+- Greedy decoding tends to loop once it locks onto a phrase (see [Example Outputs](#example-outputs));
+  sampling avoids this at some cost to factual reliability.
 
 ## License
 
