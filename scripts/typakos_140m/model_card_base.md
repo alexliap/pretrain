@@ -4,7 +4,6 @@ language:
 - el
 license: mit
 library_name: transformers
-base_model: alexliap/typakos-140m-base
 pipeline_tag: text-generation
 tags:
 - llama
@@ -17,13 +16,13 @@ datasets:
 - alexliap/greek-synth-v1
 ---
 
-# Typakos-140M-Base
+# Typakos-140M-base
 
 ![Typakos](tyapkos.png)
 
 The name "Typakos" comes from the Greek "Τυπάκος," meaning "small dude," a nod to the model's small (140M) parameter count.
 
-Typakos-140M-Base is a 140M-parameter bilingual (Greek/English) base language model with a Llama-family architecture and a 2048-token context length. It was trained from scratch (no warm start), full-parameter, on approximately 9.33B tokens split roughly 50/50 between English and Greek. This is a **base, completion-only checkpoint**: it has no chat template and has not undergone any instruction tuning, so it should be prompted as a plain text continuation model, not as a chat assistant.
+Typakos-140M-base is a 140M-parameter bilingual (Greek/English) base language model with a Llama-family architecture and a 2048-token context length. It was trained from scratch (no warm start), full-parameter, on approximately 9.33B tokens split roughly 50/50 between English and Greek. This is a **base, completion-only checkpoint**: it has no chat template and has not undergone any instruction tuning, so it should be prompted as a plain text continuation model, not as a chat assistant.
 
 The full training pipeline, code, and configs live in [`scripts/typakos_140m/`](https://github.com/alexliap/pretrain/tree/llama120_gr/scripts/typakos_140m) on GitHub.
 
@@ -111,7 +110,7 @@ print(tokenizer.decode(output[0], skip_special_tokens=True))
 
 Evaluated 0-shot with [EleutherAI lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness), except GSM8K at 5-shot, matching the shot conventions stated on the SmolLM2 model card.
 
-| Benchmark | Typakos-140M-Base | SmolLM2-135M-8k |
+| Benchmark | Typakos-140M-base | SmolLM2-135M-8k |
 |---|---:|---:|
 | HellaSwag (acc_norm) | 26.5 | 42.1 |
 | ARC (avg acc_norm) | 28.3 | 43.9 |
@@ -123,13 +122,13 @@ Evaluated 0-shot with [EleutherAI lm-evaluation-harness](https://github.com/Eleu
 | OpenBookQA (acc_norm) | 33.2 | 34.6 |
 | GSM8K 5-shot (exact_match) | 0.2 | 1.4 |
 
-> The gap to SmolLM2-135M-8k below is largely a training-budget gap, not an architecture gap: per its [model card](https://huggingface.co/HuggingFaceTB/SmolLM2-135M), SmolLM2-135M was pretrained on about 2T tokens, roughly 200 times the ~9.33B tokens Typakos-140M-Base has seen, on a curated English-only mix (FineWeb-Edu, DCLM, The Stack, plus additional filtered sources). Typakos-140M-Base is a single-stage, from-scratch run on a much smaller, bilingual (EN/EL) corpus, so it is comparable in size and architecture but not yet in data scale.
+> The gap to SmolLM2-135M-8k below is largely a training-budget gap, not an architecture gap: per its [model card](https://huggingface.co/HuggingFaceTB/SmolLM2-135M), SmolLM2-135M was pretrained on about 2T tokens, roughly 200 times the ~9.33B tokens Typakos-140M-base has seen, on a curated English-only mix (FineWeb-Edu, DCLM, The Stack, plus additional filtered sources). Typakos-140M-base is a single-stage, from-scratch run on a much smaller, bilingual (EN/EL) corpus, so it is comparable in size and architecture but not yet in data scale.
 
 ### Greek Suite
 
 Evaluated 0-shot on the `ilsp_greek` task suite (65 sub-tasks, including all 57 `mmlu_greek` subject splits). No SmolLM2 reference exists for these tasks, so they are reported standalone:
 
-| Task | Typakos-140M-Base |
+| Task | Typakos-140M-base |
 |---|---:|
 | arc_challenge_greek (acc) | 20.2 |
 | hellaswag_greek (acc) | 26.5 |

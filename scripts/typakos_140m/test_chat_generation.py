@@ -24,6 +24,7 @@ ENGLISH_PROMPTS = [
     "Write a short story about a small village.",
     "What's the most important thing to remember about machine learning?",
     "Write a Python function to compute the nth Fibonacci number.",
+    "Hello, how are you?",
 ]
 
 GREEK_PROMPTS = [
@@ -31,6 +32,7 @@ GREEK_PROMPTS = [
     "Γράψε μια σύντομη ιστορία για ένα μικρό χωριό.",
     "Τι είναι η τεχνητή νοημοσύνη;",
     "Πώς είναι ο καιρός σήμερα στην Αθήνα;",
+    "Γεια σου, τι κάνεις;",
 ]
 
 

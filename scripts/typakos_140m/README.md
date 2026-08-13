@@ -2,8 +2,14 @@
 
 ![Typakos](tyapkos.png)
 
-The pretraining stage of **typakos**, a 140M-parameter bilingual (Greek /
-English) base language model. Trained from scratch (no warm start) on ~9.33B tokens, full-parameter. `typakos_model/` itself is a **base** checkpoint: no chat template, no instruction tuning. This directory also holds the post-training steps that build on it, see [Post-training](#post-training) below.
+The full training pipeline for **typakos**, a 140M-parameter bilingual (Greek / English) language
+model: pretraining a base checkpoint from scratch, then post-training it into an instruction-tuned,
+preference-aligned chat model. `train.sh` (below) writes that **base** checkpoint locally to
+`typakos_model/` -- gitignored, not part of this repo -- and it's published to the Hub as
+[`alexliap/typakos-140m-base`](https://huggingface.co/alexliap/typakos-140m-base): trained from
+scratch, no warm start, on ~9.33B tokens, full-parameter; no chat template, no instruction tuning,
+prompted as plain-text continuation only. [Post-training](#post-training) below covers the two
+stages built on top of it, SFT then DPO, that turn it into `typakos-140m-it`.
 
 Every script here runs from the **repo root** (paths inside them are
 CWD-relative, e.g. `data/raw`, `tokenized_data`, `models/...`), so invoke them
@@ -21,6 +27,8 @@ as `python scripts/typakos_140m/<script>.py`, not from inside this directory.
   - [Merge and split](#merge-and-split)
   - [Chat template](#chat-template)
   - [SFT config](#sft-config)
+  - [DPO data](#dpo-data)
+  - [DPO config](#dpo-config)
   - [Not done yet](#not-done-yet)
 
 ## Architecture
@@ -44,8 +52,7 @@ template only; see `PretrainTask._init_model_and_tokenizer`.
 
 ## Tokenizer
 
-[`alexliap/bilingual_el_en_50k`](https://huggingface.co/alexliap/bilingual_el_en_50k),
-trained by [`train_tokenizer.py`](train_tokenizer.py): byte-level BPE, 50,000
+Trained by [`train_tokenizer.py`](train_tokenizer.py): byte-level BPE, 50,000
 learned merges + 256 byte tokens + 2 special tokens (`<|begin_of_text|>` id 0,
 `<|end_of_text|>` id 1, doubling as pad). The pre-tokenizer regex is borrowed
 structurally from Llama 3.2 (`meta-llama/Llama-3.2-1B`), only its pipeline,
@@ -141,10 +148,10 @@ python scripts/typakos_140m/prepare_shards.py
 
 ## Post-training
 
-The steps below turn the base `typakos_model/` checkpoint into
-`typakos_sft_model/`: a token-bounded SFT data pool, a chat template with new
-special tokens, and a Hydra config for the run. The SFT run itself
-(`trl.SFTTrainer` via the repo root's `sft.py`) hasn't happened yet.
+The steps below turn the base `typakos_model/` checkpoint into the instruction-tuned, DPO-aligned
+`typakos-140m-it` model, in two stages: SFT (`trl.SFTTrainer`) for chat formatting and
+instruction-following, then DPO (`trl.DPOTrainer`) for preference alignment on top of the SFT
+result. Both stages are full-parameter (no LoRA).
 
 ### SFT data pool
 
@@ -257,6 +264,53 @@ still untuned starting points, not a recovered or validated run like
 `sft.sh` points Hydra at `configs/sft.yaml` in this directory (`-cp
 scripts/typakos_140m/configs -cn sft`), mirroring `train.sh`.
 
+### DPO data
+
+[`prepare_dpo_data.py`](prepare_dpo_data.py) pulls the `el`/`en` configs of
+`openeurollm/Dolci-Instruct-DPO-translated` (already shaped as
+`prompt`/`chosen`/`rejected` conversational triples, no reshaping needed
+beyond dropping the `id` column), concatenates both languages, shuffles
+(seed 0), and splits off 10% as validation:
+
+| split | rows |
+|---|---:|
+| train | 423,954 |
+| validation | 47,107 |
+
+Saved as a `datasets.DatasetDict` via `save_to_disk` to
+`data/typakos_dpo_dataset/`, the local-directory format
+`pretrain.dpo.task.DPOTask._load_split` expects.
+
+```bash
+python scripts/typakos_140m/prepare_dpo_data.py
+```
+
+### DPO config
+
+[`configs/dpo.yaml`](configs/dpo.yaml) points `trl.DPOTrainer` (via the repo
+root's `dpo.py`) at `alexliap/typakos-140m-it` -- the SFT result, still the
+pre-DPO variant as of writing -- and `data/typakos_dpo_dataset`. Full-parameter
+DPO (no LoRA, no separate `ref_model`; TRL derives the reference model
+internally), `dataset_format: "conversational"`, sigmoid loss with `beta:
+0.1`. `adam_beta1`/`adam_beta2`/`adam_epsilon` again match the
+pretraining/SFT runs' optimizer settings. `lr_scheduler_type:
+"constant_with_warmup"` with `warmup_steps: 500` ramps the learning rate
+before holding it flat -- plain `"constant"` ignores warmup entirely in
+transformers 5.x, regardless of `warmup_steps`. The learning rate itself has
+gone through a few iterations during tuning (`2e-7` -> `1e-6` -> `5e-6`);
+DPO's un-length-normalized sigmoid loss produces much larger raw gradients
+than SFT/pretraining's per-token cross-entropy, so `grad_norm` running in the
+tens-to-hundreds (occasionally spiking higher, absorbed by
+`max_grad_norm: 1.0` clipping) is expected here, not a sign of instability.
+
+```bash
+./scripts/typakos_140m/dpo.sh
+```
+
+`dpo.sh` points Hydra at `configs/dpo.yaml` in this directory, mirroring
+`train.sh`/`sft.sh`.
+
 ### Not done yet
 
-The actual SFT run.
+The DPO run is in progress; evaluation of the resulting `typakos-140m-it`
+checkpoint hasn't happened yet.
