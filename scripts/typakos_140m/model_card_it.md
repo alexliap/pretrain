@@ -26,6 +26,8 @@ datasets:
 
 ![Typakos](tyapkos.png)
 
+The name "Typakos" comes from the Greek "Τυπάκος," meaning "small dude," a nod to the model's small (140M) parameter count.
+
 Typakos-140M-it is the instruction-tuned, preference-aligned chat model built on top of
 [`alexliap/typakos-140m-base`](https://huggingface.co/alexliap/typakos-140m-base), a 140M-parameter
 bilingual (Greek/English) base language model. It's produced by a two-stage post-training pipeline
