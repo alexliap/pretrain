@@ -12,6 +12,7 @@ fi
 uv venv -p 3.13
 uv sync
 
+# Requires HF auth (run `uv run hf auth login` or set HF_TOKEN) for the downloads below.
 uv run hf download alexliap/llama_140m_sft \
     --repo-type model \
     --local-dir models/typakos_sft_model

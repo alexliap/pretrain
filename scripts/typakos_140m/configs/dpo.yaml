@@ -25,7 +25,7 @@ run_name: "typakos_140m_dpo_v1"
 lora: null
 
 dataset:
-  dataset_id: "data/typakos_dpo_dataset"   # placeholder: point at your preference dataset
+  dataset_id: "data/typakos_dpo_dataset"   # written by prepare_dpo_data.py
   dataset_split: "train"
   eval_split: "validation"
   dataset_format: "conversational"      # rows of {"prompt", "chosen", "rejected"} as message lists
