@@ -76,7 +76,7 @@ stage uses to mask the training loss to assistant tokens only (`assistant_only_l
 
 ## Training Pipeline
 
-### Stage 0: Pretraining (recap)
+### Stage 0: Pretraining
 
 Trained from scratch, full-parameter, on ~9.33B tokens split roughly 50/50 English/Greek. See
 [`alexliap/typakos-140m-base`](https://huggingface.co/alexliap/typakos-140m-base) for the full
