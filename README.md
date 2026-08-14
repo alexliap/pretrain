@@ -322,7 +322,7 @@ Defaults are config-driven; the values below reflect the current `configs/train.
 
 Self-contained records of specific pretraining runs (pipeline scripts, the reconstructed config that produced the released checkpoint, and architecture/corpus/hyperparameter details) live under `scripts/<run_name>/`:
 
-- [`scripts/typakos_140m/`](scripts/typakos_140m/README.md): the 140M-parameter bilingual Greek/English base model released as [`alexliap/llama_140m_10b`](https://huggingface.co/alexliap/llama_140m_10b).
+- [`scripts/typakos_140m/`](scripts/typakos_140m/README.md): the 140M-parameter bilingual Greek/English base model released as [`alexliap/typakos-140m-base`](https://huggingface.co/alexliap/typakos-140m-base).
 
 ## Requirements
 

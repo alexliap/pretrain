@@ -187,7 +187,37 @@ repetition but trades it for occasional factual drift; see [Limitations](#limita
 
 ## Evaluation
 
-_TBD: evaluation results pending._
+Evaluated 0-shot with [EleutherAI lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness), except BBH (3-shot) and GSM8K (5-shot). The model's own chat template was applied for IFEval; the remaining tasks were run as raw completion/multiple-choice scoring without the chat template, matching Open LLM Leaderboard-style methodology.
+
+| Benchmark | Typakos-140M-it | SmolLM2-135M-Instruct |
+|---|---:|---:|
+| IFEval (avg of 4 sub-metrics) | 15.6 | 29.9 |
+| HellaSwag (acc_norm) | 26.7 | 40.9 |
+| ARC (avg acc_norm) | 28.4 | 37.3 |
+| PIQA (acc_norm) | 55.8 | 66.3 |
+| MMLU cloze (acc) | 23.5 | 29.3 |
+| BBH 3-shot (acc_norm) | 28.6 | 28.2 |
+| GSM8K 5-shot (exact_match) | 1.1 | 1.4 |
+
+> BBH here uses `leaderboard_bbh`, a multiple-choice reformulation, rather than the original free-form chain-of-thought task: a model this size cannot yet produce coherent multi-step reasoning text, so this number reflects loglikelihood-based answer ranking, not demonstrated step-by-step reasoning.
+
+### Greek Suite
+
+Evaluated 0-shot on the `ilsp_greek` task suite (65 sub-tasks, including all 57 `mmlu_greek` subject splits), without the chat template. No SmolLM2 reference exists for these tasks, so they are reported standalone:
+
+| Task | Typakos-140M-it |
+|---|---:|
+| arc_challenge_greek (acc) | 19.6 |
+| hellaswag_greek (acc) | 26.6 |
+| mmlu_greek (acc, 57 subj.) | 22.9 |
+| mgsm_direct_greek (exact_match) | 1.6 |
+| winogrande_greek (acc) | 50.9 |
+| truthfulqa_greek_mc1 (acc) | 24.2 |
+| truthfulqa_greek_mc2 (acc) | 44.3 |
+| medical_mcqa_greek (acc) | 16.0 |
+| mcqa_greek_asep (acc) | 18.7 |
+
+`medical_mcqa_greek` and `mcqa_greek_asep` have no English-benchmark equivalent and are reported for completeness only. `winogrande_greek` uses a different task formulation than the English `winogrande` row above (full-candidate-sentence plausibility scoring rather than fill-in-the-blank), so the two are not directly comparable.
 
 ## Limitations
 

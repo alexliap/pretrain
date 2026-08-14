@@ -1,5 +1,5 @@
 # Reconstructed record of the typakos_140m pretraining run (released as
-# alexliap/llama_140m_10b). The root configs/train.yaml has since moved on to
+# alexliap/typakos-140m-base). The root configs/train.yaml has since moved on to
 # other experiments, so this is NOT that file re-exported - it is rebuilt
 # from the run's own checkpoint state (typakos_model/state/{optimizer,
 # scheduler,custom_checkpoint_0}), which is authoritative for what actually
