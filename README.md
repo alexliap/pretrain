@@ -11,37 +11,13 @@ A lightweight language model **pretraining / continued-pretraining / supervised 
 - **Supervised Fine-Tuning (SFT)**: TRL-based SFT with conversational data and assistant-only loss
 - **LoRA / PEFT**: Train adapters instead of full parameters for both CPT and SFT (via `peft`)
 - **Adapter Merging**: Merge a trained LoRA adapter back into its base model to bridge CPT → SFT
-- **Mixed Precision Training**: Built-in bf16 support for faster training
-- **Gradient Accumulation**: Efficient training with large effective batch sizes
-- **Dataset Packing**: Efficient sequence packing to maximize token utilization
-- **Crash-Safe Resume**: Full training-state checkpointing (step/epoch/tokens seen + dataloader position)
 - **Token-Budget Stopping**: Stop training after a target number of tokens (`total_tokens`)
 - **Automatic Logging**: GPU metrics and training stats via trackio, plus a write-enabled dashboard
 - **Custom Tokenizers**: Support for custom tokenizer training and usage
-- **Checkpoint Management**: Top-K checkpoint saving based on validation loss (plus a fixed `last/`)
-- **Evaluation Benchmarks**: Built-in support for HumanEval, IFEVAL, and MMLU
 
-## Model Architecture
+## From a checkpoint or pretrained directory (any HF causal LM)
 
-The framework supports two ways of obtaining a model, and is **architecture-agnostic** on the load path:
-
-### From scratch (Qwen3 presets)
-
-When no `saved_checkpoint_path` is given, the model is built from a size preset under `configs/model/`. These presets currently target the **Qwen3** architecture:
-
-| Preset | Layers | Hidden Size | FFN Size | Head Dim | Heads |
-|--------|--------|-------------|----------|----------|-------|
-| `qwen_tiny` | 4 | 768 | 1024 | 64 | 4 |
-| `qwen_small` | 8 | 768 | 1024 | 64 | 8 |
-| `qwen_medium` | 15 | 768 | 1024 | 64 | 8 |
-| `qwen_large` | 20 | 768 | 1024 | 128 | 8 |
-| `qwen_xlarge` | 20 | 768 | 1024 | 64 | 8 |
-
-All presets use `Qwen/Qwen3-0.6B` as the base model config reference and support customizable vocabulary size via custom tokenizers.
-
-### From a checkpoint or pretrained directory (any HF causal LM)
-
-When `saved_checkpoint_path` (training) or `model_name_or_path` (SFT) points at a checkpoint or a saved model directory, the model is loaded via `AutoConfig`/`AutoModelForCausalLM`, so **any HuggingFace causal-LM architecture works** — the size presets are bypassed.
+When `saved_checkpoint_path` (training) or `model_name_or_path` (SFT) points at a checkpoint or a saved model directory, the model is loaded via `AutoConfig`/`AutoModelForCausalLM`, so **any HuggingFace causal-LM architecture works**: the size presets are bypassed.
 
 ## Configuration
 
@@ -132,11 +108,13 @@ uv run pretrain-data download <repo_id> <local_dir>
 
 ### 2. Mix / Consolidate Data
 
-Sample and mix the downloaded datasets into a single parquet file (`data/mixed_dataset/data.parquet`). Per-dataset row counts are set in the `DATASET_WEIGHTS` dict inside the script:
+Mix the downloaded, filtered sources into proportionally-mixed, shuffled parquet shards (`data/mixed_dataset/shard_NN.parquet`), reading the per-source row targets from a mix plan JSON:
 
 ```bash
-python concat_data.py
+python scripts/typakos_140m/concat_data.py --n-shards 20
 ```
+
+This particular `concat_data.py` is part of the bilingual EL/EN corpus pipeline used for the typakos_140m run (see [scripts/typakos_140m/README.md](scripts/typakos_140m/README.md) for the full, reproducible sequence, including how the mix plan itself is derived); a from-scratch pretraining run with a different corpus would replace this step with its own mixing logic.
 
 ### 3. Tokenize Data
 
@@ -145,7 +123,7 @@ Tokenize the parquet dataset into train/test splits using the `pretrain-data` CL
 ```bash
 uv run pretrain-data tokenize \
   --tokenizer-repo-id <tokenizer-id-or-path> \
-  --data-path data/mixed_dataset/data.parquet \
+  --data-path "data/mixed_dataset/shard_*.parquet" \
   --output-path tokenized_data/
 ```
 
@@ -153,12 +131,13 @@ Use `--test-size` to change the held-out fraction (default `0.1`).
 
 ### 4. Pack Data
 
-Pack tokenized sequences into fixed-length blocks for efficient training (eliminates padding waste):
+Pack tokenized sequences into fixed-length blocks for efficient training (eliminates padding waste), using the `pretrain-data` CLI:
 
 ```bash
-python pack_data.py --max-seq-length 2048 \
+uv run pretrain-data pack \
   --input-dir tokenized_data/train \
-  --output-dir tokenized_data/packed_train_data_2048
+  --output-dir tokenized_data/packed_train_data_2048 \
+  --max-seq-length 2048
 ```
 
 ### 5. Train
@@ -177,9 +156,10 @@ python main.py model=qwen_large optimizer.learning_rate=3e-4
 
 # Configure accelerate (first time)
 accelerate config
-```
 
-Helper scripts `train.sh` and `launch.sh` wrap `accelerate launch main.py` (setting `CUDA_VISIBLE_DEVICES` / activating the venv).
+# Point at a different config directory/file (e.g. a reference run's own snapshot)
+uv run accelerate launch main.py -cp scripts/typakos_140m/configs -cn train
+```
 
 #### Continued Pretraining from a Checkpoint
 
@@ -192,7 +172,7 @@ python main.py \
 ```
 
 - Add a `lora` section to train a LoRA adapter on top of the frozen base (recommended for large-model CPT). With LoRA, only the adapter is saved into each checkpoint.
-- When resuming an **interrupted** run (a checkpoint that contains a `state/` directory), the full training state — global step, epoch, tokens seen, and dataloader position — is restored automatically so no samples are seen twice or skipped.
+- When resuming an **interrupted** run (a checkpoint that contains a `state/` directory), the full training state (global step, epoch, tokens seen, and dataloader position) is restored automatically so no samples are seen twice or skipped.
 - When using LoRA, set `compile: null`.
 
 #### Distributed Training
@@ -232,12 +212,12 @@ accelerate launch sft.py
 Key configuration:
 
 - `model_name_or_path`: the merged-CPT directory (or any base model) to fine-tune.
-- `dataset`: `dataset_id` (HF hub id or local `save_to_disk` dir), splits, and `dataset_format` — one of `conversational` (rows of `{"messages": [...]}`), `prompt_completion`, or `text`.
+- `dataset`: `dataset_id` (HF hub id or local `save_to_disk` dir), splits, and `dataset_format`, one of `conversational` (rows of `{"messages": [...]}`), `prompt_completion`, or `text`.
 - `chat_template_path`: a ChatML template with `{% generation %}` markers (`configs/lfm2_chatml_gen.jinja`) so **assistant-only loss** works on conversational data; set to `null` to keep the tokenizer's own template.
 - `sft`: knobs forwarded to `trl.SFTConfig` (`output_dir`, `learning_rate`, `per_device_train_batch_size`, `max_length`, `assistant_only_loss`, `packing`, eval/save intervals, `bf16`, …).
 - `lora`: optional LoRA section for adapter-based SFT (omit for full-parameter).
 
-trackio logging is wired automatically through a custom callback (`pretrain.sft.task.TrackioCallback`) — no `report_to` setting is needed.
+trackio logging is wired automatically through a custom callback (`pretrain.sft.task.TrackioCallback`): no `report_to` setting is needed.
 
 ## Training Features
 
@@ -279,7 +259,7 @@ lora:
   target_modules: ["q_proj", "v_proj"]   # default; null lets peft auto-infer instead
 ```
 
-For CPT, only the adapter is trained (the base is frozen) and each checkpoint stores the adapter **separately** — `adapter_config.json` + `adapter_model.safetensors`, not a full model copy. The base model is taken from `saved_checkpoint_path`. When using LoRA it's recommended to set `compile: null`.
+For CPT, only the adapter is trained (the base is frozen) and each checkpoint stores the adapter **separately**: `adapter_config.json` + `adapter_model.safetensors`, not a full model copy. The base model is taken from `saved_checkpoint_path`. When using LoRA it's recommended to set `compile: null`.
 
 ### Crash-Safe Resume
 When a run is interrupted, resuming from a checkpoint that contains a `state/` directory restores the full training state (step, epoch, tokens seen) and the dataloader position, so training continues exactly where it left off.
@@ -338,6 +318,12 @@ Defaults are config-driven; the values below reflect the current `configs/train.
 - **Gradient Clipping**: Max norm of 1.0
 - **Sequence Length**: Configurable via `data.max_seq_length` (default 2048)
 
+## Reference Runs
+
+Self-contained records of specific pretraining runs (pipeline scripts, the reconstructed config that produced the released checkpoint, and architecture/corpus/hyperparameter details) live under `scripts/<run_name>/`:
+
+- [`scripts/typakos_140m/`](scripts/typakos_140m/README.md): the 140M-parameter bilingual Greek/English base model released as [`alexliap/typakos-140m-base`](https://huggingface.co/alexliap/typakos-140m-base).
+
 ## Requirements
 
 - Python **>= 3.12**
@@ -349,4 +335,4 @@ Defaults are config-driven; the values below reflect the current `configs/train.
 uv run pytest
 ```
 
-The test suite (under `tests/`) is CPU-only and focused on the crash-resume correctness logic — training-state round-trips and deterministic dataloader skip-on-resume.
+The test suite (under `tests/`) is CPU-only and focused on the crash-resume correctness logic: training-state round-trips and deterministic dataloader skip-on-resume.

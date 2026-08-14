@@ -1,0 +1,85 @@
+# SFT config for typakos_140m. Starts from models/typakos_sft_model/ (the
+# base checkpoint plus chat-template special tokens and resized embeddings,
+# see add_chat_template.py) and trains on data/typakos_sft_dataset (the
+# merged, shuffled train/validation split from concat_sft_data.py, pulled
+# locally by setup_sft.sh from the alexliap/typakos_sft_dataset Hub repo as a
+# raw parquet snapshot rather than a save_to_disk dir -- see
+# SFTTask._load_split's local-dir handling).
+#
+# The `sft` block's batch size / epochs / eval cadence below are untuned
+# starting points, not a recovered or validated run like ../train.yaml -
+# adjust them to the hardware actually running this.
+#
+# Launch with (from the repo root):
+#   uv run accelerate launch sft.py -cp scripts/typakos_140m/configs -cn sft
+# or use ../sft.sh, which wraps exactly this.
+
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+  output_subdir: null
+  run:
+    dir: .
+
+model_name_or_path: "models/typakos_sft_model"
+tokenizer_path: null
+
+# typakos_sft_model's tokenizer already carries chat_template.jinja (with
+# {% generation %} markers) via add_chat_template.py, so no override needed.
+chat_template_path: null
+
+attn_implementation: "kernels-community/flash-attn2"
+run_name: "typakos_140m_sft_v1"
+
+# Full-parameter SFT: 140M params is small enough that LoRA isn't needed here
+# (unlike the big lfm2 runs this config format was built for). Add a `lora:`
+# block back if that changes.
+lora: null
+
+dataset:
+  dataset_id: "data/typakos_sft_dataset"
+  dataset_split: "train"
+  eval_split: "validation"
+  dataset_format: "conversational"      # rows of {"messages": [{"role", "content"}, ...]}
+  shuffle: true
+  shuffle_seed: 0
+
+sft:
+  output_dir: "checkpoints/typakos_140m_sft"
+  num_train_epochs: 1.0
+  max_steps: -1                 # set > 0 for quick smoke tests
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 1
+  learning_rate: 2e-5
+  lr_scheduler_type: "cosine"
+  warmup_ratio: null             # keep null: transformers 5.x lets warmup_steps win when set
+  warmup_steps: 0.1             # fraction of total steps (see ../../../src/pretrain/sft/config.py)
+  max_grad_norm: 1.0
+  weight_decay: 0.01
+  # Betas/eps match the typakos_140m pretraining run (configs/train.yaml's
+  # optimizer block).
+  adam_beta1: 0.9
+  adam_beta2: 0.95
+  adam_epsilon: 1e-10
+  max_length: 2048
+  packing: false
+  dataset_num_proc: 16
+  # Loss on assistant turns only. Needs chat_template.jinja's {% generation %}
+  # markers, confirmed present (see README.md's Post-training section).
+  assistant_only_loss: true
+  completion_only_loss: null
+  bf16: true
+  gradient_checkpointing: false
+  logging_steps: 10
+  save_steps: 500
+  save_total_limit: 2
+  eval_strategy: "steps"
+  eval_steps: 2000
+
+logging:
+  project_name: "typakos_140m_sft"
+  auto_log_gpu: true

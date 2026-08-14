@@ -1,7 +1,13 @@
+import logging
+from functools import partial
+from pathlib import Path
+
 import torch
-from datasets import load_from_disk
+from datasets import DatasetDict, concatenate_datasets, load_from_disk
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
+
+logger = logging.getLogger(__name__)
 
 
 def collate_fn(
@@ -33,7 +39,10 @@ def collate_fn(
     else:
         padded_input_ids = pad_sequence(input_ids, batch_first=True, padding_value=0)
 
-    out = {"input_ids": padded_input_ids}
+    # The store holds int32 ids to halve its size on disk. nn.Embedding accepts
+    # int32, but task.py derives `labels` from these ids and cross-entropy
+    # requires int64 targets, so widen here - once per batch, on a small tensor.
+    out = {"input_ids": padded_input_ids.long()}
     if return_attention_mask:
         positions = torch.arange(padded_input_ids.size(1))
         out["attention_mask"] = (positions[None, :] < lengths[:, None]).long()
@@ -55,15 +64,60 @@ class PretrainDataLoader:
         self.max_seq_length = max_seq_length
         self.use_packed_data = use_packed_data
 
-    def train_dataloader(self):
-        # Load packed or unpacked data based on config
-        if self.use_packed_data:
-            data_path = f"tokenized_data/packed_train_data_{self.max_seq_length}"
-        else:
-            data_path = "tokenized_data/train"
+    def _load_train(self):
+        """Load the training store, sharded or not.
 
-        dataset = load_from_disk(data_path)
-        train = dataset["train"]
+        ``prepare_shards.py`` writes one directory per shard instead of one
+        monolithic dataset: consolidating 30 shards into a single
+        ``save_to_disk`` would copy ~120 GB for no benefit.
+        ``concatenate_datasets`` joins them in sorted shard order, and that order
+        is what makes resume-by-sample-index correct - the training loader runs
+        with ``shuffle=False`` so the on-disk order is the training order
+        (tests/test_resume_dataloader.py::test_deterministic_order).
+        """
+        if self.use_packed_data:
+            data_path = Path(f"tokenized_data/packed_train_data_{self.max_seq_length}")
+        else:
+            data_path = Path("tokenized_data/train")
+
+        # `save_to_disk` writes the arrow files first and `state.json` last, so
+        # its presence is what distinguishes a finished shard from one still being
+        # written. Filtering on it lets a run start against a store that
+        # prepare_shards.py is still filling - useful for test runs - instead of
+        # dying on the half-written directory.
+        all_dirs = sorted(data_path.glob("shard_*"))
+        shard_dirs = [d for d in all_dirs if (d / "state.json").exists()]
+
+        if shard_dirs:
+            skipped = len(all_dirs) - len(shard_dirs)
+            if skipped:
+                logger.warning(
+                    "%s: %d of %d shard directories are incomplete and were "
+                    "skipped - this run sees a partial corpus.",
+                    data_path,
+                    skipped,
+                    len(all_dirs),
+                )
+            train = concatenate_datasets(
+                [load_from_disk(str(shard_dir)) for shard_dir in shard_dirs]
+            )
+            # Logged unconditionally: a store that is short a few shards is
+            # otherwise indistinguishable from a complete one at training time.
+            logger.info(
+                "Loaded %d shards from %s: %d sequences (~%.2fB tokens)",
+                len(shard_dirs),
+                data_path,
+                len(train),
+                len(train) * self.max_seq_length / 1e9,
+            )
+            return train
+
+        dataset = load_from_disk(str(data_path))
+        # A DatasetDict from the single-shot tokenize path, a Dataset otherwise.
+        return dataset["train"] if isinstance(dataset, DatasetDict) else dataset
+
+    def train_dataloader(self):
+        train = self._load_train()
 
         # Remove attention_mask if it exists (may not exist in packed data)
         if "attention_mask" in train.column_names:
@@ -82,7 +136,7 @@ class PretrainDataLoader:
             # Packed training data has no padding, so no attention mask is needed.
             # Passing one would push the model onto FlashAttention's variable-length
             # path (the .item() graph break) and trigger torch.compile recompiles.
-            collate_fn=lambda batch: collate_fn(batch, self.max_seq_length),
+            collate_fn=partial(collate_fn, max_seq_length=self.max_seq_length),
         )
 
     def val_dataloader(self, size: int | None = int(5e2)):
@@ -107,9 +161,9 @@ class PretrainDataLoader:
             prefetch_factor=2,
             persistent_workers=True,
             pin_memory=True,
-            collate_fn=lambda batch: collate_fn(
-                batch,
-                self.max_seq_length,
+            collate_fn=partial(
+                collate_fn,
+                max_seq_length=self.max_seq_length,
                 return_attention_mask=True,
             ),
         )
