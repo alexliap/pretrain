@@ -18,9 +18,9 @@ Output layout::
 
     tokenized_data/
       test/                                  # held out, unpacked, variable length
-      token_distribution.json                # read by pretrain.pretraining.task
+      token_distribution.json                # read by pretrain.training.pretraining.task
       packed_train_data_2048/
-        shard_00/ ... shard_29/              # concatenated by pretrain.pretraining.dataloader
+        shard_00/ ... shard_29/              # concatenated by pretrain.training.pretraining.dataloader
         packing_stats.json
 """
 

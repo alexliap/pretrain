@@ -8,11 +8,11 @@ from accelerate import Accelerator
 from transformers import PreTrainedModel
 
 # TrainingConfig is only ever an annotation here (quoted below), and importing
-# it for real would close a cycle: pretrain.pretraining's __init__ imports
-# task.py, which imports this module. Keeping it type-only leaves `import
-# pretrain.checkpoint` standalone.
+# it for real would close a cycle: pretrain.training.pretraining's __init__
+# imports task.py, which imports this module. Keeping it type-only leaves
+# `import pretrain.checkpoint` standalone.
 if TYPE_CHECKING:
-    from pretrain.pretraining.config import TrainingConfig
+    from pretrain.training.pretraining.config import TrainingConfig
 
 
 class TrainingState:

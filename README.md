@@ -217,7 +217,7 @@ Key configuration:
 - `sft`: knobs forwarded to `trl.SFTConfig` (`output_dir`, `learning_rate`, `per_device_train_batch_size`, `max_length`, `assistant_only_loss`, `packing`, eval/save intervals, `bf16`, …).
 - `lora`: optional LoRA section for adapter-based SFT (omit for full-parameter).
 
-trackio logging is wired automatically through a custom callback (`pretrain.sft.task.TrackioCallback`): no `report_to` setting is needed.
+trackio logging is wired automatically through a custom callback (`pretrain.training.post_training_common.TrackioCallback`): no `report_to` setting is needed.
 
 ## Training Features
 

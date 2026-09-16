@@ -5,7 +5,7 @@ openeurollm/Dolci-Instruct-DPO-translated (laid out on the Hub as
 `el/shard*.parquet` / `en/shard*.parquet`), concatenates them, shuffles, splits
 off a validation fraction, and saves the result as a single
 `datasets.DatasetDict` via `save_to_disk` -- the format
-`pretrain.dpo.task.DPOTask._load_split` expects when `dataset_id` points at a
+`pretrain.training.post_training_common.load_split` expects when `dataset_id` points at a
 local directory. Rows already match the "conversational" DPO schema
 (`prompt`/`chosen`/`rejected`, each a list of chat messages), so no reshaping
 is needed beyond dropping the `id` column and concatenating languages.

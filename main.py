@@ -5,7 +5,7 @@ from accelerate.utils import set_seed
 from dotenv import load_dotenv
 from omegaconf import DictConfig, OmegaConf
 
-from pretrain.pretraining import PretrainTask, TrainingConfig
+from pretrain.training.pretraining import PretrainTask, TrainingConfig
 
 load_dotenv()
 set_seed(0)

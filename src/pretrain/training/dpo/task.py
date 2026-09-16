@@ -1,40 +1,24 @@
 """Direct Preference Optimization workflow built on ``trl.DPOTrainer``.
 
-This is a parallel path to :class:`pretrain.sft.task.SFTTask`. Rather than the
+This is a parallel path to :class:`pretrain.training.sft.task.SFTTask`. Rather than the
 hand-rolled Accelerate loop, it delegates the training loop, data collation,
 and reference-model handling to TRL. The model/tokenizer load idiom mirrors
 ``SFTTask`` (bf16 + flash-attn kernel) and the LoRA wrapping reuses the same
 ``peft.LoraConfig`` shape as the SFT/pretraining paths.
 """
 
-import os
-
 import torch
 import trackio
 from accelerate import PartialState
-from datasets import DatasetDict, load_dataset, load_from_disk
-from peft import LoraConfig as PeftLoraConfig
-from transformers import AutoTokenizer, TrainerCallback
 from trl import DPOConfig, DPOTrainer
 
-from pretrain.dpo.config import DPORunConfig
-
-
-class TrackioCallback(TrainerCallback):
-    """Log TRL/Trainer metrics to the trackio run started in ``DPOTask.train``.
-
-    We don't use transformers' built-in ``report_to="trackio"`` integration: in
-    transformers 5.12.1 its callback calls ``trackio.init(bucket_id=...)``, an
-    argument the installed trackio doesn't accept. This callback logs the same
-    metrics against the run already initialized in the entrypoint instead.
-    """
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is None or not state.is_world_process_zero:
-            return
-        metrics = {k: v for k, v in logs.items() if isinstance(v, (int, float))}
-        if metrics:
-            trackio.log(metrics, step=state.global_step)
+from pretrain.training.dpo.config import DPORunConfig
+from pretrain.training.post_training_common import (
+    TrackioCallback,
+    build_peft_config,
+    load_split,
+    load_tokenizer,
+)
 
 
 class DPOTask:
@@ -42,49 +26,6 @@ class DPOTask:
 
     def __init__(self, config: DPORunConfig):
         self.config = config
-
-    def _load_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer_path)
-        # DPO needs a pad token for batching; fall back to eos when absent.
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        # Optional chat-template override (e.g. one matching the SFT stage's).
-        if self.config.chat_template_path is not None:
-            with open(self.config.chat_template_path) as f:
-                tokenizer.chat_template = f.read()
-        return tokenizer
-
-    def _load_split(self, split: str):
-        """Load a dataset split from the Hub, a local ``save_to_disk`` dir, or a
-        local raw-file directory (e.g. a ``hf download`` snapshot of a Hub
-        dataset repo, with data files under ``data/`` and no
-        ``dataset_dict.json``/``dataset_info.json`` marker)."""
-        dataset_id = self.config.dataset.dataset_id
-        is_saved_to_disk = os.path.isfile(
-            os.path.join(dataset_id, "dataset_dict.json")
-        ) or os.path.isfile(os.path.join(dataset_id, "dataset_info.json"))
-        if is_saved_to_disk:
-            dataset = load_from_disk(dataset_id)
-            # load_from_disk yields a DatasetDict for saved splits, or a bare
-            # Dataset when a single split was saved.
-            return dataset[split] if isinstance(dataset, DatasetDict) else dataset
-
-        return load_dataset(dataset_id, split=split)
-
-    def _build_peft_config(self) -> PeftLoraConfig | None:
-        """Build a peft LoRA config from the reused LoraConfig, or None for full FT."""
-        lora = self.config.lora
-        if lora is None:
-            return None
-
-        return PeftLoraConfig(
-            r=lora.r,
-            lora_alpha=lora.lora_alpha,
-            lora_dropout=lora.lora_dropout,
-            target_modules=lora.target_modules,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
 
     def _build_dpo_config(self) -> DPOConfig:
         cfg = self.config
@@ -160,19 +101,21 @@ class DPOTask:
                 space_id=None,
             )
 
-        tokenizer = self._load_tokenizer()
-        train_dataset = self._load_split(config.dataset.dataset_split)
+        tokenizer = load_tokenizer(config.tokenizer_path, config.chat_template_path)
+        train_dataset = load_split(
+            config.dataset.dataset_id, config.dataset.dataset_split
+        )
         if config.dataset.shuffle:
             train_dataset = train_dataset.shuffle(seed=config.dataset.shuffle_seed)
 
         eval_dataset = (
-            self._load_split(config.dataset.eval_split)
+            load_split(config.dataset.dataset_id, config.dataset.eval_split)
             if config.dataset.eval_split
             else None
         )
 
         dpo_config = self._build_dpo_config()
-        peft_config = self._build_peft_config()
+        peft_config = build_peft_config(config.lora)
 
         trainer = DPOTrainer(
             model=config.model_name_or_path,

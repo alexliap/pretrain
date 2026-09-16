@@ -1,6 +1,6 @@
 """Configuration for (continued-)pretraining runs.
 
-The counterpart to :class:`pretrain.sft.config.SFTRunConfig`: everything the
+The counterpart to :class:`pretrain.training.sft.config.SFTRunConfig`: everything the
 hand-rolled Accelerate loop in ``task.py`` needs. The sections that are not
 specific to this path, ``logging``, ``lora``, ``evaluation``, live in
 ``pretrain.config`` and are reused here, so SFT and the evaluation tasks can

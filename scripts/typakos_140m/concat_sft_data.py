@@ -5,7 +5,7 @@ concatenates them (they all share the same messages/num_tokens/num_turns/source
 schema), shuffles the pool, then splits off a validation fraction from the
 back of that shuffled order. Output is a single `datasets.DatasetDict` with
 "train"/"validation" splits, saved via `save_to_disk`, the format
-`pretrain.sft.task.SFTTask._load_split` expects when `dataset_id` points at a
+`pretrain.training.post_training_common.load_split` expects when `dataset_id` points at a
 local directory.
 
     python scripts/typakos_140m/concat_sft_data.py

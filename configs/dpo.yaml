@@ -75,7 +75,7 @@ dpo:
   eval_strategy: "steps"           # "steps" when eval_split is set
   eval_steps: 500
   # trackio logging is wired automatically via a custom callback (see
-  # pretrain.dpo.task.TrackioCallback); no report_to setting needed.
+  # pretrain.training.post_training_common.TrackioCallback); no report_to setting needed.
 
 # Logging (trackio)
 logging:

@@ -1,10 +1,10 @@
 """Config sections shared across training paths.
 
 Only the sections more than one module needs live here: ``logging`` and ``lora``
-are used by both ``pretrain.pretraining`` and ``pretrain.sft``, and the
-``evaluation`` sections are consumed by ``pretrain.evaluation``. Keeping them
-out of ``pretrain.pretraining.config`` is what lets SFT and the evaluation tasks
-reuse them without importing the pretraining module.
+are used by both ``pretrain.training.pretraining`` and ``pretrain.training.sft``,
+and the ``evaluation`` sections are consumed by ``pretrain.evaluation``. Keeping
+them out of ``pretrain.training.pretraining.config`` is what lets SFT and the
+evaluation tasks reuse them without importing the pretraining module.
 """
 
 from dataclasses import dataclass, field
