@@ -191,10 +191,12 @@ class TrainingConfig:
 
         eval_dict = d.pop("evaluation", {})
         if eval_dict:
-            for task_name in ["humaneval", "ifeval", "mmlu"]:
-                if task_name in eval_dict and isinstance(eval_dict[task_name], dict):
-                    eval_dict[task_name] = EvaluationTaskConfig(**eval_dict[task_name])
-            sections["evaluation"] = EvaluationConfig(**eval_dict)
+            task_dicts = eval_dict.pop("tasks", {}) or {}
+            tasks = {
+                name: EvaluationTaskConfig(**task_dict)
+                for name, task_dict in task_dicts.items()
+            }
+            sections["evaluation"] = EvaluationConfig(tasks=tasks, **eval_dict)
         else:
             sections["evaluation"] = EvaluationConfig()
 

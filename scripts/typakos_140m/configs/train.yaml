@@ -97,19 +97,24 @@ checkpoint:
 # Evaluation (unused for this run)
 evaluation:
   enabled: false
-  humaneval:
-    enabled: false
-    num_samples: 50
-    max_new_tokens: 512
-    temperature: 0.0
-  mmlu:
-    enabled: false
-    num_samples: 100
-    temperature: 0.0
-  ifeval:
-    enabled: false
-    num_samples: 50
-    max_new_tokens: 512
-    temperature: 0.0
+  tasks:
+    humaneval:
+      enabled: false
+      num_samples: 50
+      max_new_tokens: 512
+      temperature: 0.0
+    mmlu:
+      enabled: false
+      num_samples: 100
+      batch_size: 8
+    hellaswag:
+      enabled: false
+      num_samples: 100
+      batch_size: 8
+    ifeval:
+      enabled: false
+      num_samples: 50
+      max_new_tokens: 512
+      temperature: 0.0
   log_predictions: false
   save_results_dir: "eval_results"
