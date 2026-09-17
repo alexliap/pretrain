@@ -1,7 +1,7 @@
 """Shared fixtures for the resume-mechanism test suite.
 
 Everything here is CPU-only and uses tiny synthetic data so the tests are fast and
-deterministic — the resume logic under test lives in accelerate and the dataloader,
+deterministic: the resume logic under test lives in accelerate and the dataloader,
 not in the model, so no real LLM/GPU/flash-attn is needed.
 """
 

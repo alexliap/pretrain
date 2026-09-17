@@ -1,0 +1,306 @@
+"""Measure per-source token rates and derive the corpus mix plan.
+
+Everything downstream is sized in *tokens*, but parquet can only be sliced by
+*rows*, and the two are related by a ratio that varies almost 2x across these
+sources (Greek costs ~7.2 bytes/token, English ~4.5, and mean document length
+ranges from 2.4 KB to 15 KB). This script measures that ratio with the real
+tokenizer and writes:
+
+    data/token_rates.json  - bytes/token and tokens/row per source, plus the
+                              token pool each source can supply
+    data/mix_plan.json     - rows to take from each source to hit the target
+                              budget at the target English/Greek split
+
+``concat_data.py`` consumes the mix plan. Row counts come from parquet footers
+(exact, cheap) and tokens/row from a sample spread across shards, so the pool
+estimate does not depend on reading 433 GB of text.
+
+    python scripts/typakos_140m/measure_token_rates.py --budget 50e9 --en-share 0.5
+
+Run from the repo root - every path here is relative to it.
+"""
+
+import argparse
+import json
+import logging
+from pathlib import Path
+
+import polars as pl
+from transformers import AutoTokenizer
+
+from download_data import SOURCES, downloaded_files
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
+
+TOKENIZER_PATH = "models/bilingual_el_en_50k"
+OUT_DIR = Path("data")
+
+# Shards sampled per source, and documents per sampled shard. Spread across the
+# shard list rather than taken from the front: these sources are ordered (by
+# CommonCrawl dump, for the web-crawl sources), so the head is not representative.
+SAMPLE_SHARDS = 10
+SAMPLE_DOCS = 20_000
+
+
+def _sample_docs(source: str) -> list[str]:
+    """Documents that survive the source's filter, spread across its shards."""
+    files = downloaded_files(source)
+    if not files:
+        raise FileNotFoundError(f"No parquet files for '{source}'.")
+
+    n_picks = min(SAMPLE_SHARDS, len(files))
+    picks = {int(i * len(files) / n_picks) for i in range(n_picks)}
+    docs: list[str] = []
+    for i in sorted(picks):
+        frame = pl.scan_parquet(files[i]).select(["text"]).head(SAMPLE_DOCS * 4)
+        docs.extend(t for t in frame.head(SAMPLE_DOCS).collect()["text"] if t)
+    return docs
+
+
+def _row_count(source: str) -> tuple[int, int]:
+    """rows across a source's shards.
+
+    Unfiltered counts come from parquet footers; filtered counts need the filter
+    columns read.
+    """
+    files = downloaded_files(source)
+    rows = pl.scan_parquet(files).select(pl.len()).collect().item()
+
+    return rows
+
+
+def measure(tokenizer) -> dict[str, dict]:
+    rates: dict[str, dict] = {}
+    logger.info(
+        "%-16s %5s %10s %7s %9s %10s",
+        "source",
+        "lang",
+        "rows",
+        "B/token",
+        "tok/row",
+        "pool_tokens",
+    )
+    for source in SOURCES:
+        docs = _sample_docs(source)
+        n_bytes = sum(len(d.encode()) for d in docs)
+        n_tokens = sum(
+            len(ids) for ids in tokenizer(docs, add_special_tokens=False).input_ids
+        )
+        rows = _row_count(source)
+
+        bytes_per_token = n_bytes / n_tokens
+        # +2 for the bos/eos the post-processor adds to every document, which are
+        # real tokens in the packed stream and must be budgeted for.
+        tokens_per_row = n_tokens / len(docs) + 2
+        pool = int(tokens_per_row * rows)
+
+        rates[source] = {
+            "lang": SOURCES[source]["lang"],
+            "rows": rows,
+            "bytes_per_token": round(bytes_per_token, 3),
+            "tokens_per_row": round(tokens_per_row, 1),
+            "pool_tokens": pool,
+            "sampled_docs": len(docs),
+        }
+        logger.info(
+            "%-16s %5s %10d %7.2f %9.2f %10s",
+            source,
+            SOURCES[source]["lang"],
+            rows,
+            bytes_per_token,
+            tokens_per_row,
+            f"{pool / 1e9:.2f}B",
+        )
+    return rates
+
+
+def plan_mix(rates: dict[str, dict], budget: float, en_share: float) -> dict[str, dict]:
+    """Allocate the token budget across sources, then convert to row counts.
+
+    Greek is allocated by priority rather than proportionally: the curated
+    sources (including synthetic) are taken in full first, and cc_greek - the
+    only source deep enough to absorb whatever is left - fills the remainder.
+    That keeps the highest-quality Greek text at 100% inclusion instead of
+    subsampling it to hit a ratio.
+    """
+    en_target = int(budget * en_share)
+    el_target = int(budget - en_target)
+
+    en_sources = [s for s in rates if rates[s]["lang"] == "en"]
+    synth = [s for s in rates if s.startswith("synth_")]
+    curated_el = [
+        s
+        for s in rates
+        if rates[s]["lang"] == "el" and s not in synth and s != "cc_greek"
+    ]
+
+    alloc: dict[str, int] = {}
+
+    # English: fineweb_edu is the only source and is far deeper than any budget.
+    for source in en_sources:
+        alloc[source] = min(en_target, rates[source]["pool_tokens"])
+
+    # Greek. Curated sources go in whole, synth splits whatever's left over its
+    # four configs proportionally (so none dominates), and cc_greek absorbs
+    # anything still left after that.
+    curated_total = 0
+    for source in curated_el:
+        take = min(rates[source]["pool_tokens"], el_target - curated_total)
+        alloc[source] = take
+        curated_total += take
+
+    synth_pool = sum(rates[s]["pool_tokens"] for s in synth)
+    synth_budget = min(el_target - curated_total, synth_pool)
+    for source in synth:
+        share = rates[source]["pool_tokens"] / synth_pool if synth_pool else 0
+        alloc[source] = min(rates[source]["pool_tokens"], int(synth_budget * share))
+
+    non_synth = curated_total + sum(alloc[s] for s in synth)
+    if "cc_greek" in rates:
+        cc_pool = rates["cc_greek"]["pool_tokens"]
+        alloc["cc_greek"] = max(0, min(cc_pool, el_target - non_synth))
+
+    remaining = el_target - sum(
+        tokens for s, tokens in alloc.items() if rates[s]["lang"] == "el"
+    )
+
+    plan = {}
+    for source, tokens in alloc.items():
+        rate = rates[source]
+        plan[source] = {
+            "lang": rate["lang"],
+            "target_tokens": tokens,
+            "target_rows": min(rate["rows"], int(tokens / rate["tokens_per_row"])),
+            "pool_tokens": rate["pool_tokens"],
+            "fraction_of_pool": round(tokens / rate["pool_tokens"], 4)
+            if rate["pool_tokens"]
+            else 0,
+        }
+
+    _report_plan(plan, budget, en_target, el_target, remaining)
+    return plan
+
+
+def _report_plan(plan, budget, en_target, el_target, shortfall) -> None:
+    logger.info("")
+    logger.info(
+        "MIX PLAN  budget %.1fB tokens (%.0f%% EN / %.0f%% EL)",
+        budget / 1e9,
+        100 * en_target / budget,
+        100 * el_target / budget,
+    )
+    logger.info(
+        "%-16s %5s %12s %12s %9s", "source", "lang", "tokens", "rows", "of pool"
+    )
+    for source, entry in plan.items():
+        logger.info(
+            "%-16s %5s %11.2fB %12d %8.0f%%",
+            source,
+            entry["lang"],
+            entry["target_tokens"] / 1e9,
+            entry["target_rows"],
+            100 * entry["fraction_of_pool"],
+        )
+
+    got_en = sum(e["target_tokens"] for e in plan.values() if e["lang"] == "en")
+    got_el = sum(e["target_tokens"] for e in plan.values() if e["lang"] == "el")
+    total = got_en + got_el
+    got_synth = sum(
+        e["target_tokens"] for s, e in plan.items() if s.startswith("synth_")
+    )
+    logger.info(
+        "TOTAL %.2fB tokens - %.1f%% EN / %.1f%% EL, synth %.1f%% of Greek",
+        total / 1e9,
+        100 * got_en / total,
+        100 * got_el / total,
+        100 * got_synth / got_el if got_el else 0,
+    )
+
+    # Tolerate the integer-rounding residue left by the per-source allocations;
+    # only a real shortfall is worth a warning.
+    if shortfall > 0.005 * el_target:
+        logger.warning(
+            "Greek is %.2fB tokens SHORT of its %.2fB target - the Greek pool is "
+            "exhausted. Lower --budget or --en-share.",
+            shortfall / 1e9,
+            el_target / 1e9,
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Measure token rates and derive the corpus mix plan."
+    )
+    parser.add_argument("--tokenizer-path", default=TOKENIZER_PATH)
+    parser.add_argument(
+        "--budget",
+        type=float,
+        default=10e9,
+        help="Target corpus size in tokens.",
+    )
+    parser.add_argument(
+        "--en-share", type=float, default=0.5, help="English fraction of the budget."
+    )
+    args = parser.parse_args()
+
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    logger.info(
+        "Measuring token rates with %s (vocab %d) ...",
+        args.tokenizer_path,
+        len(tokenizer),
+    )
+    rates = measure(tokenizer)
+
+    en_pool = sum(r["pool_tokens"] for r in rates.values() if r["lang"] == "en")
+    el_pool = sum(r["pool_tokens"] for r in rates.values() if r["lang"] == "el")
+    logger.info("")
+    logger.info(
+        "POOL (post-filter): EN %.1fB tokens | EL %.1fB tokens | TOTAL %.1fB",
+        en_pool / 1e9,
+        el_pool / 1e9,
+        (en_pool + el_pool) / 1e9,
+    )
+
+    budget_max = min(el_pool / (1 - args.en_share), en_pool / args.en_share)
+    logger.info(
+        "Largest feasible corpus at %.0f%% EN: %.1fB tokens (Greek tops out at %.1fB)",
+        args.en_share * 100,
+        budget_max / 1e9,
+        el_pool / 1e9,
+    )
+    if args.budget > budget_max:
+        logger.warning(
+            "Requested budget %.1fB exceeds the feasible %.1fB - the plan below "
+            "will come up short.",
+            args.budget / 1e9,
+            budget_max / 1e9,
+        )
+
+    plan = plan_mix(rates, args.budget, args.en_share)
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    (OUT_DIR / "token_rates.json").write_text(json.dumps(rates, indent=2))
+    (OUT_DIR / "mix_plan.json").write_text(
+        json.dumps(
+            {
+                "config": {
+                    "budget": args.budget,
+                    "en_share": args.en_share,
+                    "tokenizer": args.tokenizer_path,
+                },
+                "sources": plan,
+            },
+            indent=2,
+        )
+    )
+    logger.info(
+        "Wrote %s and %s", OUT_DIR / "token_rates.json", OUT_DIR / "mix_plan.json"
+    )
+
+
+if __name__ == "__main__":
+    main()

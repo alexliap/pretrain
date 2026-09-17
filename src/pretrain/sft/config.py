@@ -1,15 +1,16 @@
 """Configuration for supervised fine-tuning (SFT) runs.
 
-A parallel config to :class:`pretrain.config.TrainingConfig`, but shaped around
-``trl.SFTConfig``/``trl.SFTTrainer`` instead of the custom pretraining loop.
-Built on pydantic ``BaseModel`` so a resolved Hydra dict validates recursively
-in one call (``SFTRunConfig(**cfg_dict)``). The ``lora`` and ``logging`` sections
-are reused verbatim from the pretraining config (they are stdlib dataclasses;
-pydantic coerces the incoming dicts into them) so LoRA settings and trackio
-project naming stay consistent across pretraining, CPT, and SFT.
+A parallel config to :class:`pretrain.pretraining.config.TrainingConfig`, but
+shaped around ``trl.SFTConfig``/``trl.SFTTrainer`` instead of the custom
+pretraining loop. Built on pydantic ``BaseModel`` so a resolved Hydra dict
+validates recursively in one call (``SFTRunConfig(**cfg_dict)``). The ``lora``
+and ``logging`` sections are reused verbatim from the shared ``pretrain.config``
+(they are stdlib dataclasses; pydantic coerces the incoming dicts into them) so
+LoRA settings and trackio project naming stay consistent across pretraining,
+CPT, and SFT.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 
 from pydantic import BaseModel, model_validator
 
@@ -26,7 +27,7 @@ class DatasetConfig(BaseModel):
     ``dataset_format`` selects how TRL interprets rows:
       - ``"prompt_completion"``: rows of ``{"prompt": ..., "completion": ...}``.
         TRL masks the prompt automatically (loss on the completion only) with no
-        chat-template edit — the recommended default.
+        chat-template edit, the recommended default.
       - ``"conversational"``: rows of ``{"messages": [...]}`` rendered with the
         tokenizer's chat template. True assistant-only loss additionally needs
         ``assistant_only_loss=True`` and a chat template with ``{% generation %}``
@@ -42,7 +43,7 @@ class DatasetConfig(BaseModel):
 
     # One-time shuffle of the train split at startup (eval is left in order).
     # The Trainer also reshuffles each epoch, but this randomizes the initial
-    # order once — useful for mixed-source data and for packing.
+    # order once, useful for mixed-source data and for packing.
     shuffle: bool = True
     shuffle_seed: int = 0
 
@@ -69,12 +70,16 @@ class SFTArgsConfig(BaseModel):
     warmup_steps: float = 0
     max_grad_norm: float = 1.0
     weight_decay: float = 0.0
+    adam_beta1: float = 0.9
+    adam_beta2: float = 0.95
+    adam_epsilon: float = 1e-10
 
     # SFT data handling
     max_length: int = 2048
     packing: bool = False
     assistant_only_loss: bool = False
     completion_only_loss: bool | None = None
+    dataset_num_proc: int | None = 16
 
     # Precision / memory
     bf16: bool = True
@@ -127,7 +132,7 @@ class SFTRunConfig(BaseModel):
         if self.tokenizer_path is None:
             self.tokenizer_path = self.model_name_or_path
         if not self.run_name:
-            now = datetime.now()
+            now = datetime.now(tz=UTC)
             self.run_name = f"sft-{now.date()}-{now.hour}-{now.minute}"
         return self
 

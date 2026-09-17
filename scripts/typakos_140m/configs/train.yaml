@@ -1,0 +1,115 @@
+# Reconstructed record of the typakos_140m pretraining run (released as
+# alexliap/typakos-140m-base). The root configs/train.yaml has since moved on to
+# other experiments, so this is NOT that file re-exported - it is rebuilt
+# from the run's own checkpoint state (typakos_model/state/{optimizer,
+# scheduler,custom_checkpoint_0}), which is authoritative for what actually
+# ran. See ../README.md for how each value below was derived.
+#
+# Fields NOT recoverable from the checkpoint (num_workers, val/save
+# intervals, compile, attn_implementation) are carried over from this repo's
+# train.yaml as it stood during the run and are marked "(not verifiable)".
+#
+# Launch with (from the repo root):
+#   uv run accelerate launch main.py -cp scripts/typakos_140m/configs -cn train
+# or use ../train.sh, which wraps exactly this.
+
+defaults:
+  - model: llama_140m
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+  output_subdir: null
+  run:
+    dir: .
+
+# Run-level (top-level) settings
+# From scratch: no base checkpoint, no LoRA (checkpoint state has 164 trained
+# param tensors - full-parameter, not an adapter). Stopping criterion is
+# total_tokens; the run ended at 9.33B/10B tokens when the corpus was
+# exhausted after one epoch (TrainingState: epoch=1, step_in_epoch=0,
+# global_step=35596, tokens_seen=9_331_277_824).
+saved_checkpoint_path: null
+compile: "torch"                        # (not verifiable) task.py's own default
+num_epochs: 1
+attn_implementation: "flash_attention_2" # (not verifiable) repo default at the time
+total_steps: null
+total_tokens: 10_000_000_000
+
+# Data
+data:
+  tokenizer_path: "./models/bilingual_el_en_50k/"
+  max_seq_length: 2048                  # matches config.json max_position_embeddings
+  use_packed_data: true
+  num_workers: 16                       # (not verifiable)
+  # 8 processes (state/random_states_{0..7}.pkl) x 16 x 2048 = 262,144
+  # tokens/step, matching tokens_seen / global_step exactly - confirms
+  # gradient_accumulation_steps: 1 below.
+  train_batch_size: 16
+  val_batch_size: 16                    # (not verifiable)
+
+# Optimizer - betas/eps match every historical revision of this file; lr and
+# weight_decay come from state/optimizer.bin's param_groups (differ from any
+# committed train.yaml, so these were almost certainly a CLI override:
+# `optimizer.learning_rate=2e-4 optimizer.weight_decay=0.001`).
+optimizer:
+  learning_rate: 2e-4
+  eps: 1e-10
+  betas:
+    - 0.9
+    - 0.95
+  weight_decay: 0.001
+  max_grad_norm: 1.0
+
+# Scheduler - state/scheduler.bin: LinearLR total_iters=16000 over 8
+# processes = warmup_steps x num_processes (see task.py's
+# _init_optimizer_and_scheduler), so warmup_steps=2000.
+scheduler:
+  warmup_steps: 2000
+
+# Accelerate
+accelerate:
+  gradient_accumulation_steps: 1
+  mixed_precision: "bf16"               # matches config.json dtype
+
+# Validation
+validation:
+  val_check_interval: 1000              # (not verifiable)
+  val_size: null                        # (not verifiable)
+
+# Logging
+logging:
+  project_name: "llama_140m_pretraining"
+  auto_log_gpu: true
+  log_every_n: 10
+
+# Checkpoint saving
+checkpoint:
+  save_dir: "checkpoints"
+  experiment_name: "llama_140m_pretraining"
+  run_name: "llama_140m_pretraining_v1"
+  save_top_k: 3                         # (not verifiable)
+  save_every_n_steps: 1000              # (not verifiable)
+  save_last: true
+  max_shard_size: "5GB"
+
+# Evaluation (unused for this run)
+evaluation:
+  enabled: false
+  humaneval:
+    enabled: false
+    num_samples: 50
+    max_new_tokens: 512
+    temperature: 0.0
+  mmlu:
+    enabled: false
+    num_samples: 100
+    temperature: 0.0
+  ifeval:
+    enabled: false
+    num_samples: 50
+    max_new_tokens: 512
+    temperature: 0.0
+  log_predictions: false
+  save_results_dir: "eval_results"

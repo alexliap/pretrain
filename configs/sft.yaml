@@ -55,7 +55,7 @@ sft:
   max_length: 2048
   packing: false
   # Loss on assistant turns only (conversational data). Requires a chat template
-  # with {% generation %} markers — see chat_template_path above.
+  # with {% generation %} markers, see chat_template_path above.
   assistant_only_loss: true
   completion_only_loss: null
   bf16: true

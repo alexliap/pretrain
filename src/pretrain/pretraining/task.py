@@ -19,9 +19,9 @@ from transformers import (
 )
 
 from pretrain.checkpoint import CheckpointManager, TrainingState
-from pretrain.config import TrainingConfig
-from pretrain.dataloader import PretrainDataLoader
 from pretrain.evaluation import EvaluationRunner
+from pretrain.pretraining.config import TrainingConfig
+from pretrain.pretraining.dataloader import PretrainDataLoader
 
 
 class PretrainTask:
@@ -100,7 +100,7 @@ class PretrainTask:
             # Resuming: only the architecture is needed here; the actual weights are
             # restored later by accelerator.load_state from the saved training state.
             # Building from config (not from_pretrained) means we don't depend on HF
-            # weights being present in the checkpoint dir — just its config.json.
+            # weights being present in the checkpoint dir, just its config.json.
             #
             # A LoRA checkpoint holds only the adapter (adapter_config.json, no
             # config.json), so the base architecture config is read from the
@@ -114,9 +114,7 @@ class PretrainTask:
             else:
                 config_source = config.saved_checkpoint_path
 
-            print(
-                f"Resuming: building model architecture from {config_source} ..."
-            )
+            print(f"Resuming: building model architecture from {config_source} ...")
             model_config = AutoConfig.from_pretrained(config_source)
             model = AutoModelForCausalLM.from_config(
                 model_config,
@@ -181,7 +179,7 @@ class PretrainTask:
         config = self.config
 
         self.optimizer = torch.optim.AdamW(
-            # Only trainable params — under LoRA this is just the adapter; for
+            # Only trainable params: under LoRA this is just the adapter; for
             # full training every param requires grad, so this is a no-op.
             filter(lambda p: p.requires_grad, self.model.parameters()),
             lr=config.optimizer.learning_rate,
@@ -190,10 +188,14 @@ class PretrainTask:
             weight_decay=config.optimizer.weight_decay,
         )
 
+        # With the default step_scheduler_with_optimizer=True, Accelerate steps the
+        # underlying scheduler num_processes times per training-loop iteration, so
+        # total_iters is scaled by num_processes to keep warmup_steps meaning "this
+        # many training-loop iterations" regardless of world size.
         self.scheduler = LinearLR(
             optimizer=self.optimizer,
             start_factor=config.warmup_start_factor,
-            total_iters=config.scheduler.warmup_steps,
+            total_iters=config.scheduler.warmup_steps * self.accelerator.num_processes,
         )
 
     def _print_model_info(self) -> None:
@@ -316,7 +318,7 @@ class PretrainTask:
         # Average across processes so every rank agrees on the validation loss.
         # Each rank only sees its shard of the (prepared) val dataloader, so the
         # per-rank averages differ. Reducing here gives the true val-set loss and,
-        # crucially, keeps it identical on every rank — checkpoint directory names
+        # crucially, keeps it identical on every rank: checkpoint directory names
         # embed the loss, so divergent values make non-main ranks write orphaned
         # state-only checkpoint dirs that never get pruned.
         avg_val_loss = self.accelerator.reduce(
@@ -411,7 +413,7 @@ class PretrainTask:
             training_state.step_in_epoch = step + 1
             training_state.tokens_seen = cumulative_tokens
 
-            # Log metrics (main process only -- one shared trackio run, not one
+            # Log metrics (main process only - one shared trackio run, not one
             # per DDP rank).
             if step % config.logging.log_every_n == 0:
                 # reduced loss across all ranks is reported in trackio
@@ -599,7 +601,7 @@ class PretrainTask:
         # Setup
         self._init_accelerator()
 
-        # Initialize logging. Only the main process talks to trackio -- under
+        # Initialize logging. Only the main process talks to trackio - under
         # DDP every process runs this same code, and initializing on every rank
         # would create one trackio run per rank instead of one shared run.
         # Continue the existing tracker run when resuming from a checkpoint's
