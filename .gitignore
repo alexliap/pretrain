@@ -255,5 +255,5 @@ test.py
 *_cache/
 /tokenized_data
 checkpoints/
-models/
+./models/
 /data
