@@ -111,6 +111,10 @@ evaluation:
       enabled: false
       num_samples: 100
       batch_size: 8
+    piqa:
+      enabled: false
+      num_samples: 100
+      batch_size: 8
     ifeval:
       enabled: false
       num_samples: 50

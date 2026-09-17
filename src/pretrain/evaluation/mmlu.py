@@ -22,7 +22,7 @@ class MMLUTask(EvaluationTask):
 
     def load_data(self) -> list[dict[str, Any]]:
         """Load MMLU dataset (all 57 subjects, test split)."""
-        dataset = load_dataset("cais/mmlu", "all", split="test")
+        dataset = load_dataset("cais/mmlu", "all", split="validation")
         return [
             {
                 "context": f"Question: {row['question']}\nAnswer:",

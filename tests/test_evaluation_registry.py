@@ -8,7 +8,7 @@ from pretrain.evaluation import TASK_REGISTRY, EvaluationRunner
 
 
 def test_registry_contains_expected_tasks():
-    assert {"mmlu", "hellaswag"}.issubset(TASK_REGISTRY.keys())
+    assert {"mmlu", "hellaswag", "piqa"}.issubset(TASK_REGISTRY.keys())
 
 
 def test_runner_builds_one_task_instance_per_registered_task():
