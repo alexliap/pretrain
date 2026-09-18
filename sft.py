@@ -4,7 +4,7 @@ import hydra
 from accelerate.utils import set_seed
 from omegaconf import DictConfig, OmegaConf
 
-from pretrain.sft import SFTRunConfig, SFTTask
+from pretrain.training.sft import SFTRunConfig, SFTTask
 
 set_seed(0)
 

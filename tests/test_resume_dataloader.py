@@ -2,12 +2,12 @@
 
 These exercise the real ``PretrainDataLoader.train_dataloader`` and the real
 ``accelerator.skip_first_batches``, the exact pieces the resume path wires together
-in ``PretrainTask.train`` (pretraining/task.py:650-664).
+in ``PretrainTask.train`` (pretrain/training/pretraining/task.py:650-664).
 """
 
 import pytest
 
-from pretrain.pretraining.dataloader import PretrainDataLoader
+from pretrain.training.pretraining.dataloader import PretrainDataLoader
 
 BATCH_SIZE = 4
 

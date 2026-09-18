@@ -4,7 +4,7 @@ import hydra
 from accelerate.utils import set_seed
 from omegaconf import DictConfig, OmegaConf
 
-from pretrain.dpo import DPORunConfig, DPOTask
+from pretrain.training.dpo import DPORunConfig, DPOTask
 
 set_seed(0)
 

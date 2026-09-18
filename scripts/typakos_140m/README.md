@@ -201,7 +201,7 @@ format) and pushed to the private Hub dataset repo
 back down as a raw parquet snapshot to `data/typakos_sft_dataset/` rather than
 regenerating the local `data/sft_pool/` copy, so `configs/sft.yaml`'s
 `dataset.dataset_id` points at `data/typakos_sft_dataset` instead --
-`pretrain.sft.task.SFTTask._load_split` detects the missing
+`pretrain.training.post_training_common.load_split` detects the missing
 `dataset_dict.json`/`dataset_info.json` `save_to_disk` markers there and falls
 back to `datasets.load_dataset`, which auto-discovers the `train-*`/
 `validation-*` parquet split pattern the same way it would for a Hub id.
@@ -279,7 +279,7 @@ beyond dropping the `id` column), concatenates both languages, shuffles
 
 Saved as a `datasets.DatasetDict` via `save_to_disk` to
 `data/typakos_dpo_dataset/`, the local-directory format
-`pretrain.dpo.task.DPOTask._load_split` expects.
+`pretrain.training.post_training_common.load_split` expects.
 
 ```bash
 python scripts/typakos_140m/prepare_dpo_data.py

@@ -6,11 +6,9 @@ from pathlib import Path
 from accelerate import Accelerator
 from transformers import PreTrainedModel, PreTrainedTokenizer
 
-from pretrain.config import EvaluationConfig
+from pretrain.config import EvaluationConfig, EvaluationTaskConfig
 from pretrain.evaluation.base import EvaluationResult, EvaluationTask
-from pretrain.evaluation.humaneval import HumanEvalTask
-from pretrain.evaluation.ifeval import IFEvalTask
-from pretrain.evaluation.mmlu import MMLUTask
+from pretrain.evaluation.registry import TASK_REGISTRY
 
 
 class EvaluationRunner:
@@ -26,11 +24,14 @@ class EvaluationRunner:
         self.tokenizer = tokenizer
         self.accelerator = accelerator
 
-        # Initialize all tasks
+        # Initialize one task instance per registered task. A registered task
+        # with no matching entry in config.tasks falls back to disabled
+        # defaults (see EvaluationTaskConfig).
         self.tasks: list[EvaluationTask] = [
-            HumanEvalTask(config.humaneval, tokenizer, accelerator),
-            IFEvalTask(config.ifeval, tokenizer, accelerator),
-            MMLUTask(config.mmlu, tokenizer, accelerator),
+            task_cls(
+                config.tasks.get(name, EvaluationTaskConfig()), tokenizer, accelerator
+            )
+            for name, task_cls in TASK_REGISTRY.items()
         ]
 
     def run_all(

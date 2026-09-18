@@ -1,10 +1,10 @@
 """Config sections shared across training paths.
 
 Only the sections more than one module needs live here: ``logging`` and ``lora``
-are used by both ``pretrain.pretraining`` and ``pretrain.sft``, and the
-``evaluation`` sections are consumed by ``pretrain.evaluation``. Keeping them
-out of ``pretrain.pretraining.config`` is what lets SFT and the evaluation tasks
-reuse them without importing the pretraining module.
+are used by both ``pretrain.training.pretraining`` and ``pretrain.training.sft``,
+and the ``evaluation`` sections are consumed by ``pretrain.evaluation``. Keeping
+them out of ``pretrain.training.pretraining.config`` is what lets SFT and the
+evaluation tasks reuse them without importing the pretraining module.
 """
 
 from dataclasses import dataclass, field
@@ -23,14 +23,17 @@ class EvaluationTaskConfig:
 
 @dataclass
 class EvaluationConfig:
-    """Configuration for evaluation tasks."""
+    """Configuration for evaluation tasks.
+
+    ``tasks`` is keyed by task name, matching a name registered in
+    ``pretrain.evaluation.registry.TASK_REGISTRY`` (e.g. "mmlu",
+    "hellaswag"). A registered task with no entry here falls back to
+    ``EvaluationTaskConfig()`` defaults (disabled), so configs only need to
+    list the tasks they want to turn on/tune.
+    """
 
     enabled: bool = False  # Master switch
-
-    # Task configs
-    humaneval: EvaluationTaskConfig = field(default_factory=EvaluationTaskConfig)
-    ifeval: EvaluationTaskConfig = field(default_factory=EvaluationTaskConfig)
-    mmlu: EvaluationTaskConfig = field(default_factory=EvaluationTaskConfig)
+    tasks: dict[str, EvaluationTaskConfig] = field(default_factory=dict)
 
     # Logging
     log_predictions: bool = False

@@ -20,8 +20,8 @@ from transformers import (
 
 from pretrain.checkpoint import CheckpointManager, TrainingState
 from pretrain.evaluation import EvaluationRunner
-from pretrain.pretraining.config import TrainingConfig
-from pretrain.pretraining.dataloader import PretrainDataLoader
+from pretrain.training.pretraining.config import TrainingConfig
+from pretrain.training.pretraining.dataloader import PretrainDataLoader
 
 
 class PretrainTask:

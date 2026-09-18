@@ -1,6 +1,6 @@
 """Supervised fine-tuning workflow built on ``trl.SFTTrainer``.
 
-This is a parallel path to :class:`pretrain.pretraining.task.PretrainTask`.
+This is a parallel path to :class:`pretrain.training.pretraining.task.PretrainTask`.
 Rather than the hand-rolled Accelerate loop, it delegates the training loop,
 data collation, prompt/completion loss masking, and checkpointing to TRL. The
 model/tokenizer
@@ -9,34 +9,18 @@ flash-attn kernel) and the LoRA wrapping reuses the same ``peft.LoraConfig``
 shape as the pretraining path.
 """
 
-import os
-
 import torch
 import trackio
 from accelerate import PartialState
-from datasets import DatasetDict, load_dataset, load_from_disk
-from peft import LoraConfig as PeftLoraConfig
-from transformers import AutoTokenizer, TrainerCallback
 from trl import SFTConfig, SFTTrainer
 
-from pretrain.sft.config import SFTRunConfig
-
-
-class TrackioCallback(TrainerCallback):
-    """Log TRL/Trainer metrics to the trackio run started in ``SFTTask.train``.
-
-    We don't use transformers' built-in ``report_to="trackio"`` integration: in
-    transformers 5.12.1 its callback calls ``trackio.init(bucket_id=...)``, an
-    argument the installed trackio doesn't accept. This callback logs the same
-    metrics against the run already initialized in the entrypoint instead.
-    """
-
-    def on_log(self, args, state, control, logs=None, **kwargs):
-        if logs is None or not state.is_world_process_zero:
-            return
-        metrics = {k: v for k, v in logs.items() if isinstance(v, (int, float))}
-        if metrics:
-            trackio.log(metrics, step=state.global_step)
+from pretrain.training.post_training_common import (
+    TrackioCallback,
+    build_peft_config,
+    load_split,
+    load_tokenizer,
+)
+from pretrain.training.sft.config import SFTRunConfig
 
 
 class SFTTask:
@@ -44,51 +28,6 @@ class SFTTask:
 
     def __init__(self, config: SFTRunConfig):
         self.config = config
-
-    def _load_tokenizer(self):
-        tokenizer = AutoTokenizer.from_pretrained(self.config.tokenizer_path)
-        # SFT needs a pad token for batching; fall back to eos when absent.
-        if tokenizer.pad_token is None:
-            tokenizer.pad_token = tokenizer.eos_token
-        # Optional chat-template override (e.g. one with {% generation %} markers
-        # so TRL can compute assistant-only loss on conversational data).
-        if self.config.chat_template_path is not None:
-            with open(self.config.chat_template_path) as f:
-                tokenizer.chat_template = f.read()
-        return tokenizer
-
-    def _load_split(self, split: str):
-        """Load a dataset split from the Hub, a local ``save_to_disk`` dir, or a
-        local raw-file directory (e.g. a ``hf download`` snapshot of a Hub
-        dataset repo, with data files under ``data/`` and no
-        ``dataset_dict.json``/``dataset_info.json`` marker)."""
-        dataset_id = self.config.dataset.dataset_id
-        is_saved_to_disk = os.path.isfile(
-            os.path.join(dataset_id, "dataset_dict.json")
-        ) or os.path.isfile(os.path.join(dataset_id, "dataset_info.json"))
-        if is_saved_to_disk:
-            dataset = load_from_disk(dataset_id)
-            # load_from_disk yields a DatasetDict for saved splits, or a bare
-            # Dataset when a single split was saved.
-            return dataset[split] if isinstance(dataset, DatasetDict) else dataset
-        # Hub id or a local directory of raw data files: load_dataset handles
-        # both the same way, auto-detecting splits from filename patterns
-        # (train-*, validation-*, ...).
-        return load_dataset(dataset_id, split=split)
-
-    def _build_peft_config(self) -> PeftLoraConfig | None:
-        """Build a peft LoRA config from the reused LoraConfig, or None for full FT."""
-        lora = self.config.lora
-        if lora is None:
-            return None
-        return PeftLoraConfig(
-            r=lora.r,
-            lora_alpha=lora.lora_alpha,
-            lora_dropout=lora.lora_dropout,
-            target_modules=lora.target_modules,
-            bias="none",
-            task_type="CAUSAL_LM",
-        )
 
     def _build_sft_config(self) -> SFTConfig:
         cfg = self.config
@@ -161,18 +100,20 @@ class SFTTask:
                 space_id=None,
             )
 
-        tokenizer = self._load_tokenizer()
-        train_dataset = self._load_split(config.dataset.dataset_split)
+        tokenizer = load_tokenizer(config.tokenizer_path, config.chat_template_path)
+        train_dataset = load_split(
+            config.dataset.dataset_id, config.dataset.dataset_split
+        )
         if config.dataset.shuffle:
             train_dataset = train_dataset.shuffle(seed=config.dataset.shuffle_seed)
         eval_dataset = (
-            self._load_split(config.dataset.eval_split)
+            load_split(config.dataset.dataset_id, config.dataset.eval_split)
             if config.dataset.eval_split
             else None
         )
 
         sft_config = self._build_sft_config()
-        peft_config = self._build_peft_config()
+        peft_config = build_peft_config(config.lora)
 
         trainer = SFTTrainer(
             model=config.model_name_or_path,

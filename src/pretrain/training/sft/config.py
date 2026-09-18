@@ -1,6 +1,6 @@
 """Configuration for supervised fine-tuning (SFT) runs.
 
-A parallel config to :class:`pretrain.pretraining.config.TrainingConfig`, but
+A parallel config to :class:`pretrain.training.pretraining.config.TrainingConfig`, but
 shaped around ``trl.SFTConfig``/``trl.SFTTrainer`` instead of the custom
 pretraining loop. Built on pydantic ``BaseModel`` so a resolved Hydra dict
 validates recursively in one call (``SFTRunConfig(**cfg_dict)``). The ``lora``

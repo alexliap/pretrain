@@ -1,6 +1,6 @@
 """Configuration for Direct Preference Optimization (DPO) runs.
 
-A parallel config to :class:`pretrain.sft.config.SFTRunConfig`, but shaped
+A parallel config to :class:`pretrain.training.sft.config.SFTRunConfig`, but shaped
 around ``trl.DPOConfig``/``trl.DPOTrainer`` instead of ``trl.SFTTrainer``.
 Built on pydantic ``BaseModel`` so a resolved Hydra dict validates
 recursively in one call (``DPORunConfig(**cfg_dict)``). The ``lora`` and
