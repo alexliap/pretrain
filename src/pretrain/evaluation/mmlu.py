@@ -16,13 +16,15 @@ from pretrain.evaluation.scoring import accuracy_from_choices
 class MMLUTask(EvaluationTask):
     """MMLU knowledge benchmark, cloze-style loglikelihood scoring."""
 
+    DATASET_ID = "cais/mmlu"
+
     @property
     def name(self) -> str:
         return "mmlu"
 
     def load_data(self) -> list[dict[str, Any]]:
         """Load MMLU dataset (all 57 subjects, test split)."""
-        dataset = load_dataset("cais/mmlu", "all", split="validation")
+        dataset = load_dataset(self.DATASET_ID, "all", split="test")
         return [
             {
                 "context": f"Question: {row['question']}\nAnswer:",
@@ -39,3 +41,16 @@ class MMLUTask(EvaluationTask):
         return accuracy_from_choices(
             model, self.tokenizer, examples, self.config.batch_size
         )
+
+
+@register_task("mmlu_greek")
+class MMLUGreekTask(MMLUTask):
+    """Greek translation of MMLU (ilsp/mmlu_greek). Same "all"-config schema
+    and scoring as MMLUTask; unlike HellaSwag/PIQA, the test split has real
+    labels, matching the English task's choice of split."""
+
+    DATASET_ID = "ilsp/mmlu_greek"
+
+    @property
+    def name(self) -> str:
+        return "mmlu_greek"
