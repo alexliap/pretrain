@@ -64,9 +64,11 @@ def _read_text(path: Path, n_rows: int) -> list[str]:
     return [text for text in frame["text"] if text]
 
 
-def batch_iterator(texts: list[str]):
+def batch_iterator(texts: pl.DataFrame):
+    # Slicing a DataFrame yields a DataFrame, not strings: hand the trainer
+    # plain lists, one batch at a time, so the full corpus is never a list.
     for start in range(0, len(texts), BATCH_SIZE):
-        yield texts[start : start + BATCH_SIZE]
+        yield texts["text"].slice(start, BATCH_SIZE).to_list()
 
 
 def verify(tokenizer: PreTrainedTokenizerFast, vocab_size: int = VOCAB_SIZE) -> None:
@@ -113,12 +115,6 @@ def downloaded_files(source: str) -> list[Path]:
 
 
 def report_fertility(tokenizer: PreTrainedTokenizerFast) -> dict[str, float]:
-    """Log bytes-per-token per source - the number that sizes the corpus.
-
-    Also compares against the Llama 3.2 base on Greek: Greek characters cost two
-    UTF-8 bytes each, so a tokenizer that has not learned Greek subwords drifts
-    towards one character per token.
-    """
     logger.info("Fertility (higher bytes/token = more text per token):")
     rates: dict[str, float] = {}
     for source in SOURCES:

@@ -19,22 +19,25 @@ logging.getLogger("httpx").setLevel(logging.ERROR)
 
 RAW_DIR = Path("data/raw")
 
+# `n_files`: the first N sorted shards, just enough to cover the docs
+# train_tokenizer.py reads (10M en, 10M el, 2.2M math). The full subsets
+# (~157 GB) don't fit on disk.
 SOURCES: dict[str, dict] = {
-    # "fineweb": {
-    #     "repo_id": "HuggingFaceFW/fineweb",
-    #     "prefix": "sample/10BT/",
-    #     "probe_files": None,
-    # },
+    "fineweb": {
+        "repo_id": "HuggingFaceFW/fineweb",
+        "prefix": "sample/10BT/",
+        "n_files": 10,  # 10.44M docs, 21.5 GB
+    },
     "greek-cc": {
         "repo_id": "alexliap/greek-cc",
         "prefix": "CC-MAIN-*/",
-        "probe_files": None,
+        "n_files": 54,  # 10.14M docs, 17.8 GB
     },
-    # "finemath": {
-    #     "repo_id": "HuggingFaceTB/finemath",
-    #     "prefix": "finemath-3plus/",
-    #     "probe_files": None,
-    # },
+    "finemath": {
+        "repo_id": "HuggingFaceTB/finemath",
+        "prefix": "finemath-3plus/",
+        "n_files": 14,  # 2.34M docs, 7.1 GB
+    },
 }
 
 
@@ -60,5 +63,6 @@ if __name__ == "__main__":
         download_dataset(
             source["repo_id"],
             local_dir=RAW_DIR / name,
-            allow_patterns=[f"{source['prefix']}*.parquet"],
+            # exact paths, so the selection is the same on every run
+            allow_patterns=list_shards(name)[: source["n_files"]],
         )
