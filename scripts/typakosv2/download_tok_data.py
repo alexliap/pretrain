@@ -14,25 +14,27 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
 )
 logger = logging.getLogger(__name__)
+# huggingface_hub logs every HTTP request through httpx at INFO
+logging.getLogger("httpx").setLevel(logging.ERROR)
 
 RAW_DIR = Path("data/raw")
 
 SOURCES: dict[str, dict] = {
-    "fineweb": {
-        "repo_id": "HuggingFaceFW/fineweb",
-        "prefix": "sample/10BT/",
-        "probe_files": None,
-    },
+    # "fineweb": {
+    #     "repo_id": "HuggingFaceFW/fineweb",
+    #     "prefix": "sample/10BT/",
+    #     "probe_files": None,
+    # },
     "greek-cc": {
         "repo_id": "alexliap/greek-cc",
         "prefix": "CC-MAIN-*/",
         "probe_files": None,
     },
-    "finemath": {
-        "repo_id": "HuggingFaceTB/finemath",
-        "prefix": "finemath-3plus/",
-        "probe_files": None,
-    },
+    # "finemath": {
+    #     "repo_id": "HuggingFaceTB/finemath",
+    #     "prefix": "finemath-3plus/",
+    #     "probe_files": None,
+    # },
 }
 
 
