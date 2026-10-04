@@ -26,17 +26,19 @@ SOURCES: dict[str, dict] = {
     "fineweb": {
         "repo_id": "HuggingFaceFW/fineweb",
         "prefix": "sample/10BT/",
-        "n_files": 10,  # 10.44M docs, 21.5 GB
     },
     "greek-cc": {
         "repo_id": "alexliap/greek-cc",
-        "prefix": "CC-MAIN-*/",
-        "n_files": 54,  # 10.14M docs, 17.8 GB
+        "prefix": [
+            "CC-MAIN-2024-22/",
+            "CC-MAIN-2024-26/",
+            "CC-MAIN-2024-30/",
+            "CC-MAIN-2024-33/",
+        ],
     },
     "finemath": {
         "repo_id": "HuggingFaceTB/finemath",
         "prefix": "finemath-3plus/",
-        "n_files": 14,  # 2.34M docs, 7.1 GB
     },
 }
 
@@ -54,8 +56,14 @@ def list_shards(source: str) -> list[str]:
             "usable without it)."
         )
     files = HfApi().list_repo_files(spec["repo_id"], repo_type="dataset")
+
     # fnmatch rather than startswith: prefixes may be globs (e.g. "CC-MAIN-*/")
-    return sorted(f for f in files if fnmatch(f, f"{spec['prefix']}*.parquet"))
+    prefixes = spec["prefix"] if isinstance(spec["prefix"], list) else [spec["prefix"]]
+    return sorted(
+        f
+        for f in files
+        if any(fnmatch(f, f"{prefix}*.parquet") for prefix in prefixes)
+    )
 
 
 if __name__ == "__main__":
@@ -64,5 +72,5 @@ if __name__ == "__main__":
             source["repo_id"],
             local_dir=RAW_DIR / name,
             # exact paths, so the selection is the same on every run
-            allow_patterns=list_shards(name)[: source["n_files"]],
+            allow_patterns=list_shards(name),
         )
