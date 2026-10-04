@@ -29,12 +29,12 @@ VOCAB_SIZE = N_LEARNED + N_BYTES + len(SPECIAL_TOKENS)
 
 # Matches configs/train.yaml's data.max_seq_length.
 MAX_SEQ_LENGTH = 4096
-OUTPUT_DIR = "models/typakosv2_tokenizer"
+OUTPUT_DIR = "models/typakos_v2_tokenizer"
 
 BATCH_SIZE = 1000
 CHUNK_ROWS = 50_000
 
-RAW_DIR = Path("data/raw")
+RAW_DIR = Path("data/raw/")
 
 
 def build_tokenizer() -> Tokenizer:

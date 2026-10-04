@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 # huggingface_hub logs every HTTP request through httpx at INFO
 logging.getLogger("httpx").setLevel(logging.ERROR)
 
-RAW_DIR = Path("data/raw")
+RAW_DIR = Path("data/raw/tokenizer")
 
 # `n_files`: the first N sorted shards, just enough to cover the docs
 # train_tokenizer.py reads (10M en, 10M el, 2.2M math). The full subsets
@@ -60,9 +60,7 @@ def list_shards(source: str) -> list[str]:
     # fnmatch rather than startswith: prefixes may be globs (e.g. "CC-MAIN-*/")
     prefixes = spec["prefix"] if isinstance(spec["prefix"], list) else [spec["prefix"]]
     return sorted(
-        f
-        for f in files
-        if any(fnmatch(f, f"{prefix}*.parquet") for prefix in prefixes)
+        f for f in files if any(fnmatch(f, f"{prefix}*.parquet") for prefix in prefixes)
     )
 
 
