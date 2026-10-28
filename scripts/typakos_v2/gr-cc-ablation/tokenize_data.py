@@ -42,6 +42,12 @@ def main() -> None:
     tokenizer = load_tokenizer(TOKENIZER_PATH)
 
     for crawl in crawls:
+        out_dir = Path(f"data/tokenized/{args.dataset_path}/{crawl}")
+        # save_to_disk writes state.json last, so it marks a finished crawl
+        if (out_dir / "state.json").exists():
+            logger.info("%s already tokenized, skipping", out_dir)
+            continue
+
         paths = parquet_paths(Path(f"data/raw/{args.dataset_path}/{crawl}"))
         dataset = read_parquet(paths, columns=["text", "crawl"]).rename_column(
             "crawl", "dataset"
@@ -49,7 +55,7 @@ def main() -> None:
         tokenized = tokenize_dataset(dataset, tokenizer, num_proc=args.num_proc)
 
         tokenized.save_to_disk(
-            f"data/tokenized/{args.dataset_path}/{crawl}",
+            out_dir,
             num_proc=args.num_proc,
             max_shard_size="400MB",
         )
