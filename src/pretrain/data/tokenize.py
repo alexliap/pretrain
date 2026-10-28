@@ -20,7 +20,7 @@ import os
 from collections import defaultdict
 
 import datasets
-from datasets import Dataset, load_dataset
+from datasets import Dataset
 from transformers import AutoTokenizer
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def load_tokenizer(tokenizer_repo_id: str) -> AutoTokenizer:
     return tokenizer
 
 
-def tokenize_shard(
+def tokenize_dataset(
     dataset: Dataset,
     tokenizer: AutoTokenizer,
     num_proc: int = 48,
@@ -112,37 +112,3 @@ def save_token_distribution(
         distribution["percentages"],
     )
     return distribution
-
-
-def tokenize_dataset(
-    tokenizer_repo_id: str,
-    data_path: str,
-    test_size: float = 0.005,
-    output_path: str = "tokenized_data/",
-    num_proc: int = 48,
-):
-    """Tokenize parquet text into ``output_path`` as train/test splits.
-
-    Single-shot path, kept for the ``pretrain-data tokenize`` CLI and small
-    datasets. The 30B corpus goes through ``prepare_shards.py`` instead, which
-    packs each shard as it is tokenized rather than persisting the unpacked
-    intermediate.
-
-    ``test_size=0`` skips the split and writes a single ``train`` split.
-    """
-    tokenizer = load_tokenizer(tokenizer_repo_id)
-
-    dataset = load_dataset("parquet", data_files=data_path)["train"]
-    tokenized = tokenize_shard(dataset, tokenizer, num_proc=num_proc)
-
-    save_token_distribution(count_tokens_per_source(tokenized), output_path)
-
-    tokenized = tokenized.remove_columns(["dataset", "num_tokens"])
-    if test_size:
-        splits = tokenized.train_test_split(test_size=test_size, shuffle=True, seed=0)
-    else:
-        splits = datasets.DatasetDict({"train": tokenized})
-
-    splits.save_to_disk(output_path, num_proc=16)
-    dataset.cleanup_cache_files()
-    tokenized.cleanup_cache_files()

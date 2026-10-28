@@ -1,0 +1,16 @@
+{
+  "greek-cc": {
+    "repo_id": "alexliap/greek-cc",
+    "repo_type": "dataset",
+    "crawls": [
+      "CC-MAIN-2024-22",
+      "CC-MAIN-2024-26",
+      "CC-MAIN-2024-30",
+      "CC-MAIN-2024-33",
+      "CC-MAIN-2024-38",
+      "CC-MAIN-2024-42",
+      "CC-MAIN-2024-46",
+      "CC-MAIN-2024-51"
+    ]
+  }
+}

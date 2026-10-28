@@ -27,7 +27,6 @@ import logging
 from pathlib import Path
 
 import polars as pl
-
 from download_data import downloaded_files
 
 logging.basicConfig(

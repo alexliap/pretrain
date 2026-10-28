@@ -38,7 +38,7 @@ from pretrain.data.tokenize import (
     count_tokens_per_source,
     load_tokenizer,
     save_token_distribution,
-    tokenize_shard,
+    tokenize_dataset,
 )
 
 logging.basicConfig(
@@ -106,7 +106,7 @@ def build_test_split(
 
     n_rows = pq.ParquetFile(path).metadata.num_rows
     dataset = _read_shard(path, offset=n_rows - test_rows, length=test_rows)
-    tokenized = tokenize_shard(
+    tokenized = tokenize_dataset(
         dataset, tokenizer, num_proc=num_proc, desc="Tokenizing test split"
     )
     n_tokens = sum(count_tokens_per_source(tokenized).values())
@@ -135,7 +135,7 @@ def prepare_shard(
         return json.loads(stats_path.read_text())
 
     dataset = _read_shard(path, length=row_limit)
-    tokenized = tokenize_shard(
+    tokenized = tokenize_dataset(
         dataset, tokenizer, num_proc=num_proc, desc=f"Tokenizing shard {index:02d}"
     )
     del dataset
