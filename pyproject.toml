@@ -28,11 +28,11 @@ dependencies = [
     "polars>=1.37.1",
     "pydantic>=2.0",
     "python-dotenv>=1.0.0",
-    "tokenizers>=0.20.0",
+    "tokenizers>=0.23.1",
     "torch==2.11.0",
     "trackio[gpu]>=0.15.0",
     "transformers>5.0.0",
-    "trl>=1.7.1",
+    "trl>=1.15",
 ]
 
 [dependency-groups]
