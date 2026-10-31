@@ -66,7 +66,6 @@ def score_loglikelihoods(
 
     with torch.no_grad():
         logits = model(input_ids=input_ids, attention_mask=attention_mask).logits
-    log_probs = logits.log_softmax(dim=-1)
 
     results = []
     for i, (full_ids, ctx_len) in enumerate(zip(full_ids_list, context_lens)):
@@ -77,10 +76,14 @@ def score_loglikelihoods(
                 LoglikelihoodResult(sum_logprob=float("-inf"), num_tokens=0)
             )
             continue
-        # log_probs[i, t] is the distribution predicting the token at t+1, so
-        # the continuation token at position p (ctx_len <= p < seq_len) is
-        # scored by log_probs[i, p - 1].
-        token_log_probs = log_probs[i, ctx_len - 1 : seq_len - 1, :]
+        # logits[i, t] is the distribution predicting the token at t+1, so the
+        # continuation token at position p (ctx_len <= p < seq_len) is scored by
+        # logits[i, p - 1]. Only this slice is widened to float32: summed bf16
+        # log-probs round badly, and widening the whole batch can OOM on a
+        # large-vocab model.
+        token_log_probs = logits[i, ctx_len - 1 : seq_len - 1, :].float().log_softmax(
+            dim=-1
+        )
         target_ids = input_ids[i, ctx_len:seq_len]
         picked = token_log_probs.gather(-1, target_ids.unsqueeze(-1)).squeeze(-1)
         results.append(

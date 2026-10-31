@@ -27,6 +27,8 @@ def _clean_text(text: str) -> str:
 class HellaSwagTask(EvaluationTask):
     """HellaSwag commonsense-completion benchmark."""
 
+    DATASET_ID = "Rowan/hellaswag"
+
     @property
     def name(self) -> str:
         return "hellaswag"
@@ -34,7 +36,7 @@ class HellaSwagTask(EvaluationTask):
     def load_data(self) -> list[dict[str, Any]]:
         """Load HellaSwag dataset (validation split - the test split has no
         public labels)."""
-        dataset = load_dataset("Rowan/hellaswag", split="validation")
+        dataset = load_dataset(self.DATASET_ID, split="validation")
         examples = []
         for row in dataset:
             ctx = _clean_text(row["ctx_a"] + " " + row["ctx_b"].capitalize())
@@ -55,3 +57,16 @@ class HellaSwagTask(EvaluationTask):
         return accuracy_from_choices(
             model, self.tokenizer, examples, self.config.batch_size
         )
+
+
+@register_task("hellaswag_greek")
+class HellaSwagGreekTask(HellaSwagTask):
+    """Greek translation of HellaSwag (ilsp/hellaswag_greek). Same schema and
+    scoring as HellaSwagTask; like the English version, only the validation
+    split has public labels (test labels are blank)."""
+
+    DATASET_ID = "ilsp/hellaswag_greek"
+
+    @property
+    def name(self) -> str:
+        return "hellaswag_greek"

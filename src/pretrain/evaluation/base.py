@@ -1,5 +1,6 @@
 """Base classes for evaluation tasks."""
 
+import random
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
@@ -39,7 +40,6 @@ class EvaluationTask(ABC):
     @abstractmethod
     def name(self) -> str:
         """Task name for logging."""
-        pass
 
     @abstractmethod
     def load_data(self) -> list[dict[str, Any]]:
@@ -48,7 +48,6 @@ class EvaluationTask(ABC):
         Returns:
             List of evaluation examples.
         """
-        pass
 
     @abstractmethod
     def evaluate_batch(
@@ -63,7 +62,6 @@ class EvaluationTask(ABC):
         Returns:
             Dictionary of metrics
         """
-        pass
 
     def run(self, model: PreTrainedModel, step: int) -> EvaluationResult | None:
         """Run full evaluation.
@@ -79,16 +77,18 @@ class EvaluationTask(ABC):
             return None
 
         try:
-            self.accelerator.print(f"\n{'='*50}")
+            self.accelerator.print(f"\n{'=' * 50}")
             self.accelerator.print(f"Running {self.name} evaluation ...")
-            self.accelerator.print(f"{'='*50}")
+            self.accelerator.print(f"{'=' * 50}")
 
             model.eval()
             data = self.load_data()
 
-            # Limit samples if configured
-            if self.config.num_samples:
-                data = data[: self.config.num_samples]
+            # Limit samples if configured. A fixed-seed sample rather than the
+            # head, since datasets can be ordered (MMLU is sorted by subject);
+            # the subset stays the same at every eval, so scores are comparable.
+            if self.config.num_samples and self.config.num_samples < len(data):
+                data = random.Random(0).sample(data, self.config.num_samples)
 
             with torch.no_grad():
                 metrics = self.evaluate_batch(model, data)
