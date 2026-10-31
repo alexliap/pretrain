@@ -1,0 +1,103 @@
+# Continued pre-training of LFM3-1.7B on the Greek Common Crawl corpus, following
+# Liquid's lfm3_cpt_with_trl.ipynb. The lora block and the first group of training
+# settings are the notebook's own; the second group differs because this corpus
+# is far larger than the notebook's 3,000 articles.
+#
+# Launch with (from the repo root):
+#   uv run accelerate launch scripts/lfm3_greek/cpt.py
+# or use ../train.sh, which wraps exactly this.
+
+defaults:
+  - _self_
+
+hydra:
+  job:
+    chdir: false
+  output_subdir: null
+  run:
+    dir: .
+
+model_id: "LiquidAI/LFM3-1.7B"
+run_name: "lfm3_greek_cpt_r64"
+resume_from_checkpoint: null
+# Stop after this many training tokens, counted across all GPUs. Takes precedence
+# over training.max_steps and training.num_train_epochs. null = use those instead.
+total_tokens: 20_000_000_000
+
+data:
+  dataset_id: "alexliap/greek-cc"
+  # null trains on every crawl (the dataset's default config). A number streams
+  # that many documents instead, as the notebook does.
+  max_train_docs: null
+  num_eval_docs: 10000
+  # Out-of-distribution eval set: a different register from the web pages trained on.
+  ood_dataset_id: "alexliap/high-quality-gr-text"
+  ood_config: "wikipedia_el"
+  num_ood_docs: 1000
+
+lora:
+  r: 64
+  lora_alpha: 64
+  lora_dropout: 0.0
+  target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "in_proj", "out_proj", "w1", "w2", "w3"]
+
+# Forwarded to trl.SFTConfig, which TRL also uses for plain-text CPT: a `text`
+# column trains on every token. bf16/fp16 are picked from the hardware in cpt.py.
+training:
+  output_dir: "checkpoints/lfm3_greek_cpt"
+  num_train_epochs: 1
+  max_steps: -1                 # set > 0 for quick smoke tests
+  per_device_train_batch_size: 16
+  per_device_eval_batch_size: 16
+  gradient_accumulation_steps: 1
+  learning_rate: 2e-4
+  lr_scheduler_type: "cosine"
+  warmup_steps: 0.05            # a float is a fraction of the total steps
+  max_length: 8192
+  packing: true
+  packing_strategy: "wrapped"
+  dataset_text_field: "text"
+  logging_steps: 10
+  eval_strategy: "steps"
+
+  eval_steps: 1000              # notebook: 100
+  save_strategy: "steps"        # notebook: "no"
+  save_steps: 2000
+  save_total_limit: 3
+  dataset_num_proc: 16
+  # Rank 0 runs the Greek benchmarks while the other ranks wait for it.
+  ddp_timeout: 7200
+
+# Steps between Greek benchmark rounds, logged to trackio as eval/<task>/<metric>.
+benchmark_steps: 1000
+
+evaluation:
+  enabled: true
+  tasks:
+    mmlu_greek:
+      enabled: true
+      num_samples: 512
+      batch_size: 2
+    hellaswag_greek:
+      enabled: true
+      num_samples: 512
+      batch_size: 2
+    arc_easy_greek:
+      enabled: true
+      num_samples: 512
+      batch_size: 2
+    arc_challenge_greek:
+      enabled: true
+      num_samples: 512
+      batch_size: 2
+    ifeval_greek:
+      enabled: true
+      num_samples: 50
+      max_new_tokens: 512
+      temperature: 0.0
+  log_predictions: false
+  save_results_dir: "eval_results"
+
+logging:
+  project_name: "lfm3_greek_cpt"
+  auto_log_gpu: true
