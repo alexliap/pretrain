@@ -38,6 +38,7 @@ class ModelConfig:
 class DataConfig:
     """Configuration for the data/tokenization pipeline."""
 
+    data_path: str
     tokenizer_path: str = ""
     max_seq_length: int = 2048  # Context window size for packing
     use_packed_data: bool = True  # Whether to use packed dataset
@@ -76,6 +77,7 @@ class AccelerateConfig:
 class ValidationConfig:
     """Configuration for periodic validation."""
 
+    data_path: str
     val_check_interval: int = 500
     val_size: int | None = 10000
 
@@ -130,7 +132,7 @@ class TrainingConfig:
     # to PyTorch's built-in "sdpa" since custom Hub kernels (e.g.
     # "kernels-community/flash-attn2/3") may not ship a compiled kernel image for
     # newer GPU architectures (confirmed missing for Blackwell/sm_120).
-    attn_implementation: str = "sdpa"
+    attn_implementation: str | None = None
     num_epochs: int = 1
     total_steps: int | None = None
     total_tokens: int | None = None

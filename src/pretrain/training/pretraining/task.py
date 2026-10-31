@@ -160,18 +160,19 @@ class PretrainTask:
             num_workers=config.data.num_workers,
             train_batch_size=config.data.train_batch_size,
             val_batch_size=config.data.val_batch_size,
-            max_seq_length=config.data.max_seq_length,
-            use_packed_data=config.data.use_packed_data,
         )
 
     def _init_train_dataloader(self) -> None:
         """Create the training dataloader (sets self.train_dataloader)."""
-        self.train_dataloader = self.dataloader.train_dataloader()
+        self.train_dataloader = self.dataloader.train_dataloader(
+            self.config.data.data_path
+        )
 
     def _init_validation_dataloader(self) -> None:
         """Create the validation dataloader (sets self.val_dataloader)."""
         self.val_dataloader = self.dataloader.val_dataloader(
-            size=self.config.validation.val_size
+            data_path=self.config.validation.data_path,
+            size=self.config.validation.val_size,
         )
 
     def _init_optimizer_and_scheduler(self) -> None:
