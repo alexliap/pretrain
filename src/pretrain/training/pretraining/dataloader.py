@@ -55,57 +55,36 @@ class PretrainDataLoader:
         train_batch_size=16,
         val_batch_size=4,
         num_workers=4,
-        max_seq_length=2048,
-        use_packed_data=True,
     ):
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
         self.num_workers = num_workers
-        self.max_seq_length = max_seq_length
-        self.use_packed_data = use_packed_data
 
-    def _load_train(self):
+    def _load_train(
+        self,
+        data_path: str,
+        file_pattern: str = "*.arrow",
+    ):
         """Load the training store, sharded or not.
 
-        ``prepare_shards.py`` writes one directory per shard instead of one
-        monolithic dataset: consolidating 30 shards into a single
-        ``save_to_disk`` would copy ~120 GB for no benefit.
         ``concatenate_datasets`` joins them in sorted shard order, and that order
         is what makes resume-by-sample-index correct - the training loader runs
         with ``shuffle=False`` so the on-disk order is the training order
         (tests/test_resume_dataloader.py::test_deterministic_order).
         """
-        if self.use_packed_data:
-            data_path = Path(f"tokenized_data/packed_train_data_{self.max_seq_length}")
-        else:
-            data_path = Path("tokenized_data/train")
+        data_path = Path(data_path)
 
-        # `save_to_disk` writes the arrow files first and `state.json` last, so
-        # its presence is what distinguishes a finished shard from one still being
-        # written. Filtering on it lets a run start against a store that
-        # prepare_shards.py is still filling - useful for test runs - instead of
-        # dying on the half-written directory.
-        all_dirs = sorted(data_path.glob("shard_*"))
-        shard_dirs = [d for d in all_dirs if (d / "state.json").exists()]
+        all_dirs = sorted(data_path.glob(file_pattern))
 
-        if shard_dirs:
-            skipped = len(all_dirs) - len(shard_dirs)
-            if skipped:
-                logger.warning(
-                    "%s: %d of %d shard directories are incomplete and were "
-                    "skipped - this run sees a partial corpus.",
-                    data_path,
-                    skipped,
-                    len(all_dirs),
-                )
+        if all_dirs:
             train = concatenate_datasets(
-                [load_from_disk(str(shard_dir)) for shard_dir in shard_dirs]
+                [load_from_disk(str(shard_dir)) for shard_dir in all_dirs]
             )
             # Logged unconditionally: a store that is short a few shards is
             # otherwise indistinguishable from a complete one at training time.
             logger.info(
                 "Loaded %d shards from %s: %d sequences (~%.2fB tokens)",
-                len(shard_dirs),
+                len(all_dirs),
                 data_path,
                 len(train),
                 len(train) * self.max_seq_length / 1e9,
@@ -116,8 +95,12 @@ class PretrainDataLoader:
         # A DatasetDict from the single-shot tokenize path, a Dataset otherwise.
         return dataset["train"] if isinstance(dataset, DatasetDict) else dataset
 
-    def train_dataloader(self):
-        train = self._load_train()
+    def train_dataloader(
+        self,
+        data_path: str,
+        file_pattern: str = "*.arrow",
+    ):
+        train = self._load_train(data_path, file_pattern)
 
         # Remove attention_mask if it exists (may not exist in packed data)
         if "attention_mask" in train.column_names:
@@ -139,9 +122,7 @@ class PretrainDataLoader:
             collate_fn=partial(collate_fn, max_seq_length=self.max_seq_length),
         )
 
-    def val_dataloader(self, size: int | None = int(5e2)):
-        data_path = "tokenized_data/test"
-
+    def val_dataloader(self, data_path: str, size: int | None = int(5e2)):
         val = load_from_disk(data_path)
 
         # Remove attention_mask if it exists (may not exist in packed data)

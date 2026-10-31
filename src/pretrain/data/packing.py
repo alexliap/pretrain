@@ -112,12 +112,12 @@ def pack_dataset(dataset: Dataset, max_seq_length: int) -> tuple[Dataset, dict]:
     position = 0
     for start in range(0, len(row_lengths), ROWS_PER_CHUNK):
         block = row_lengths[start : start + ROWS_PER_CHUNK]
-        n_bytes = sum(block)
+        n_tokens = sum(block)
         offsets = pa.array(np.cumsum([0] + block, dtype=np.int32))
         chunks.append(
-            pa.ListArray.from_arrays(offsets, values.slice(position, n_bytes))
+            pa.ListArray.from_arrays(offsets, values.slice(position, n_tokens))
         )
-        position += n_bytes
+        position += n_tokens
 
     column = pa.chunked_array(chunks, type=pa.list_(pa.int32()))
     packed = Dataset(
@@ -160,9 +160,7 @@ def pack_tokenized_dataset(
     """Pack a ``save_to_disk`` tokenized dataset into ``output_dir``.
 
     Single-shot path, kept for the ``pretrain-data pack`` CLI and small
-    datasets. The 30B corpus goes through ``prepare_shards.py`` instead, which
-    packs each shard as it is tokenized rather than persisting the unpacked
-    intermediate.
+    datasets.
     """
     if output_dir is None:
         output_dir = f"tokenized_data/packed_train_data_{max_seq_length}"
